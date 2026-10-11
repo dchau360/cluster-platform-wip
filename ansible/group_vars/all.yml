@@ -1,0 +1,25 @@
+---
+# Defaults shared by every play.
+#
+# Node count is a variable here as it is everywhere else. `N=2` and `N=4`
+# must both work with no code change, so no list in this repo is ever
+# written out by hand.
+lab_node_count: "{{ lookup('env', 'NODE_COUNT') | default(2, true) | int }}"
+lab_node_name_prefix: "{{ lookup('env', 'NODE_NAME_PREFIX') | default('cn', true) }}"
+lab_node_names: >-
+  {{ range(1, (lab_node_count | int) + 1)
+     | map('string')
+     | map('regex_replace', '^([0-9])$', '0\1')
+     | map('regex_replace', '^', lab_node_name_prefix)
+     | list }}
+
+# Provisioning segment. Lab-internal, not host-specific.
+lab_prov_bridge: "{{ lookup('env', 'PROV_BRIDGE') | default('br-prov', true) }}"
+lab_prov_gw: "{{ lookup('env', 'PROV_GW') | default('10.42.0.1', true) }}"
+lab_prov_domain: "{{ lookup('env', 'PROV_DOMAIN') | default('lab.internal', true) }}"
+
+# Writable lab state. Never inside the repo, never in git.
+lab_state_dir: "{{ lookup('env', 'LAB_STATE_DIR') | default('/var/lib/cluster-lab', true) }}"
+
+# Secrets come from Warewulf per-node overlays at boot, never from here.
+lab_secrets_source: warewulf-overlay

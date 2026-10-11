@@ -1,0 +1,13 @@
+# Rendered from systemd/lab.target.in by scripts/systemd-install.sh.
+#
+# One handle for the whole lab: `systemctl start lab.target`. Later tasks
+# add their services here (Warewulf, NetBox, Slurm) so cold start stays a
+# single ordered operation.
+[Unit]
+Description=Cluster lab
+Documentation=https://github.com/dchau360/cluster-platform-wip
+Wants=lab-net.service lab-dnsmasq.service
+After=lab-net.service lab-dnsmasq.service
+
+[Install]
+WantedBy=multi-user.target

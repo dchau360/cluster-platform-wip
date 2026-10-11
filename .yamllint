@@ -1,0 +1,27 @@
+---
+# yamllint for a repo that is mostly Ansible and GitHub Actions.
+extends: default
+
+rules:
+  line-length:
+    max: 120
+    level: warning
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: disable
+  # Ansible and Actions both use `on:`, `yes`, `no` idiomatically.
+  truthy:
+    allowed-values: ["true", "false"]
+    check-keys: false
+  braces:
+    max-spaces-inside: 1
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: true
+  document-start:
+    present: true
+
+ignore: |
+  .github/
+  ansible/inventory/hosts.generated*
+  lab/local.env

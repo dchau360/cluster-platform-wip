@@ -1,0 +1,86 @@
+# ---------------------------------------------------------------------------
+# Host-specific configuration. Never tracked.
+# ---------------------------------------------------------------------------
+lab/local.env
+lab/local.env.*
+!lab/local.env.example
+
+# ---------------------------------------------------------------------------
+# Lab state. Disk images, firmware vars, boot trees, dumps. Never tracked.
+# ---------------------------------------------------------------------------
+*.qcow2
+*.qcow2.*
+*.qed
+*.vmdk
+*.vdi
+*.raw
+*.img
+*.iso
+*.fd
+*.vars
+*.nvram
+
+# TFTP / PXE boot trees
+tftpboot/
+tftproot/
+/srv/
+pxelinux.cfg/
+grub/grub.cfg
+*.efi
+*.kernel
+*.initramfs
+*.squashfs
+*.cpio
+*.cpio.gz
+
+# NetBox dumps and any database export
+netbox-dump*
+*.netbox.json
+*.pgdump
+*.sql
+*.sql.gz
+*.dump
+
+# Ansible
+*.retry
+.ansible/
+ansible/*.log
+ansible/inventory/hosts.generated*
+fact_cache/
+
+# Runtime state, logs, timing output
+state/
+run/
+var/
+logs/
+*.log
+*.pid
+*.lease
+*.leases
+timings/
+*.ndjson
+
+# Secrets of any kind. Belt and braces: these come from Warewulf
+# per-node overlays at boot, never from this repo.
+*.key
+*.pem
+*.crt
+*.p12
+*.jks
+id_rsa*
+id_ed25519*
+ssh_host_*
+munge.key
+*.vault
+.vault-pass*
+
+# Editors, OS, Python
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+venv/

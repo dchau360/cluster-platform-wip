@@ -1,0 +1,14 @@
+---
+# ansible-lint. Production profile from the start: this is a skeleton now,
+# and the cheapest time to adopt the strict profile is before any content
+# exists.
+profile: production
+
+exclude_paths:
+  - .github/
+  - lab/
+  - docs/
+
+# yamllint runs as its own CI job with its own config.
+skip_list:
+  - yaml

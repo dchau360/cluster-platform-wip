@@ -1,0 +1,15 @@
+---
+# Static inventory for the lab control host.
+#
+# Compute nodes are NOT listed here. They are generated from NODE_COUNT at
+# run time by the provisioning task, because nothing in this repo may know
+# a node count, and because a real node MAC must never reach a tracked file.
+all:
+  children:
+    lab_control:
+      hosts:
+        localhost:
+          ansible_connection: local
+    lab_compute:
+      # Populated at run time. See docs/architecture.md.
+      hosts: {}

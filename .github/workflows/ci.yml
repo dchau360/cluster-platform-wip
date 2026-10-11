@@ -1,0 +1,145 @@
+---
+# CI for a PUBLIC repository.
+#
+# The first bad commit is the expensive one, so these gates were turned on
+# before any content existed. Two of the five jobs exist only to stop a
+# leak: `secrets` and `host-values`. The rest keep the skeleton honest.
+#
+# GitHub secret-scanning push protection is enabled on the repository as
+# well, so a credential is refused at `git push` and never reaches a run.
+
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GITLEAKS_VERSION: "8.30.1"
+
+jobs:
+  secrets:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: a secret removed from the tip is still a leak.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # First, because it needs no tool: a tracked file named or placed like
+      # key material is a finding even when it is empty, and an empty file
+      # passes every content scan.
+      - name: No secret material and no lab state is tracked
+        run: ./scripts/check-no-tracked-secrets.sh
+
+      - name: Install gitleaks ${{ env.GITLEAKS_VERSION }}
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/gitleaks.tgz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          sudo tar -xzf /tmp/gitleaks.tgz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: Scan the working tree
+        run: gitleaks dir . --redact --no-banner --verbose --exit-code 1
+
+      - name: Scan the full git history
+        run: gitleaks git . --redact --no-banner --verbose --exit-code 1
+
+  host-values:
+    name: host-value hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # The exact-match check needs the real lab/local.env. It is supplied
+      # as a repository secret so CI can search for its values without them
+      # ever being in a tracked file. Fork pull requests get no secret; the
+      # pattern checks in the script still run and still fail on a leaked
+      # address or a real MAC.
+      - name: Materialise lab/local.env from the repository secret
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          LAB_LOCAL_ENV: ${{ secrets.LAB_LOCAL_ENV }}
+        run: |
+          set -euo pipefail
+          if [ -n "${LAB_LOCAL_ENV:-}" ]; then
+            # Never echoed. The checker prints variable names only.
+            printf '%s' "$LAB_LOCAL_ENV" > lab/local.env
+            echo "lab/local.env written, $(wc -l < lab/local.env) line(s)"
+          else
+            echo "LAB_LOCAL_ENV secret not set; pattern checks only"
+          fi
+
+      - name: No host-specific value in any tracked file
+        run: ./scripts/check-no-host-values.sh
+
+      - name: Confirm lab/local.env stayed untracked
+        if: always()
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet --exit-code -- . || [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+            echo "::error::the workflow modified a tracked file"
+            git status --porcelain --untracked-files=no
+            exit 1
+          fi
+          echo "no tracked file was modified"
+
+  yamllint:
+    name: yamllint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: pipx install yamllint
+      - run: yamllint --strict .
+
+  ansible-lint:
+    name: ansible-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: pip install --disable-pip-version-check "ansible-core>=2.18" ansible-lint
+      - run: ansible-lint --offline
+        working-directory: .
+      - name: Playbook syntax check
+        run: ansible-playbook --syntax-check site.yml
+        working-directory: ansible
+
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Lint every tracked shell script
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(git ls-files '*.sh')
+          printf 'checking %d script(s)\n' "${#files[@]}"
+          shellcheck -x -S style -P SCRIPTDIR "${files[@]}"
+
+  harness:
+    name: harness smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: make help
+        run: make help
+      - name: Every script parses
+        run: |
+          set -euo pipefail
+          git ls-files '*.sh' | while read -r f; do bash -n "$f"; echo "ok $f"; done
+      - name: Node count is a variable, never a constant
+        run: ./scripts/check-node-count-is-variable.sh

@@ -1,0 +1,66 @@
+# gitleaks configuration for a PUBLIC repository.
+#
+# Every commit here is world-readable forever, so this extends the default
+# ruleset rather than replacing it, and adds the secrets this project will
+# be tempted to commit: the Munge key, SSH host keys, and TLS material.
+#
+# None of those belong in git at all. They come from Warewulf per-node
+# overlays at boot. This file is the backstop for the day someone forgets.
+
+title = "cluster-platform-wip"
+
+[extend]
+useDefault = true
+
+# --- project-specific rules -------------------------------------------------
+
+[[rules]]
+id = "munge-key"
+description = "Munge authentication key material"
+# A Munge key is raw bytes, usually written next to the word 'munge'.
+regex = '''(?i)munge[._-]?key\s*[:=]\s*['"]?[A-Za-z0-9+/=]{32,}'''
+keywords = ["munge"]
+tags = ["secret", "slurm"]
+
+[[rules]]
+id = "ssh-host-private-key"
+description = "SSH host private key"
+regex = '''-----BEGIN (OPENSSH|RSA|EC|DSA|ED25519) PRIVATE KEY-----'''
+keywords = ["BEGIN", "PRIVATE KEY"]
+tags = ["secret", "ssh"]
+
+[[rules]]
+id = "ansible-vault-body"
+description = "Inlined Ansible Vault payload"
+regex = '''\$ANSIBLE_VAULT;[0-9.]+;AES256'''
+keywords = ["ANSIBLE_VAULT"]
+tags = ["secret", "ansible"]
+
+[[rules]]
+id = "ipmi-or-bmc-password"
+description = "BMC / IPMI / redfish password assignment"
+regex = '''(?i)(ipmi|bmc|redfish)[_-]?(pass|password|passwd)\s*[:=]\s*['"]?[^\s'"#]{6,}'''
+keywords = ["ipmi", "bmc", "redfish"]
+tags = ["secret", "hardware"]
+
+# --- allowlist --------------------------------------------------------------
+
+[allowlist]
+description = "Documented placeholders and generated artefacts"
+
+paths = [
+  # Carries named placeholders only. The real file is untracked.
+  '''^lab/local\.env\.example$''',
+  # This file documents the patterns it detects.
+  '''^\.gitleaks\.toml$''',
+]
+
+regexes = [
+  # Named placeholders used in docs. Deliberately narrow: the word
+  # "example" is NOT allowlisted, because a real leak is likelier to
+  # contain it by accident than a placeholder is to need it.
+  '''(?i)(changeme|placeholder|redacted|fill-?me|<[a-z_-]+>)''',
+  # Variable references and template markers, not values.
+  '''\$\{?[A-Z_][A-Z0-9_]*\}?''',
+  '''@[A-Z_]+@''',
+]

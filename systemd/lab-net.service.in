@@ -1,0 +1,26 @@
+# Rendered from systemd/lab-net.service.in by scripts/systemd-install.sh.
+# Do not edit the installed copy; edit the template and run `make up`.
+[Unit]
+Description=Cluster lab: isolated provisioning segment
+Documentation=https://github.com/dchau360/cluster-platform-wip
+After=network-pre.target
+Wants=network-pre.target
+PartOf=lab.target
+# After Docker on purpose. Docker writes net.ipv4.conf.all.forwarding=1,
+# and a write to `all` sets the same knob on every interface, including
+# ours. Starting first would leave the bridge with forwarding back on
+# after boot. The nftables drop is the enforcement and does not depend on
+# the knob, but the knob should still be right. See docs/network-isolation.md.
+After=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=REPO_ROOT=@REPO_ROOT@
+Environment=LAB_COUNTER_FILE=@LAB_RUN_DIR@/changes.lab-net
+ExecStart=/usr/bin/env bash @REPO_ROOT@/scripts/net-up.sh
+ExecStop=/usr/bin/env bash @REPO_ROOT@/scripts/net-down.sh
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

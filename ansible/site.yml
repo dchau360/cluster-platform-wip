@@ -1,0 +1,37 @@
+---
+# Top-level play. A skeleton: it asserts the invariants that every later
+# role has to keep, so a role that breaks one fails here rather than in
+# production.
+- name: Configure the lab control host
+  hosts: lab_control
+  gather_facts: true
+  tasks:
+    - name: Assert the node count is a variable and is usable
+      ansible.builtin.assert:
+        that:
+          - lab_node_count | int >= 1
+        fail_msg: >-
+          lab_node_count must be a positive integer. Nothing in this repo
+          may assume a node count; set it with NODE_COUNT or `make demo N=<n>`.
+        success_msg: "node count is {{ lab_node_count }}"
+
+    - name: Assert no secret is sourced from this repository
+      ansible.builtin.assert:
+        that:
+          - lab_secrets_source == 'warewulf-overlay'
+        fail_msg: >-
+          Secrets must come from Warewulf per-node overlays at boot.
+          No secret may be read from this repository.
+
+    - name: Assert lab state lives outside the repository
+      ansible.builtin.assert:
+        that:
+          - not lab_state_dir.startswith(playbook_dir)
+        fail_msg: "lab_state_dir must not be inside the repository"
+
+    - name: Ensure the lab state directory exists
+      become: true
+      ansible.builtin.file:
+        path: "{{ lab_state_dir }}"
+        state: directory
+        mode: "0755"
