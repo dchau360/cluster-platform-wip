@@ -1,5 +1,5 @@
 ---
-# make resume NODES=cn01,cn02
+# make resume NODES=<node>[,<node>...]
 - name: Resume nodes
   hosts: lab_control
   gather_facts: false

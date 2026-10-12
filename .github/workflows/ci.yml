@@ -200,11 +200,9 @@ jobs:
           docker run -d --name node --hostname cn01 --privileged --cgroupns=host \
             -v /sys/fs/cgroup:/sys/fs/cgroup:rw --tmpfs /run --tmpfs /tmp \
             -v "$PWD:/src:ro" "$COMPUTE_IMAGE" /usr/sbin/init
-          for _ in $(seq 60); do
-            state="$(docker exec node systemctl is-system-running 2>/dev/null || true)"
-            case "$state" in running|degraded) echo "systemd: $state"; break ;; esac
-            sleep 1
-          done
+          timeout 120 bash -c 'until docker exec node systemctl is-system-running --wait 2>/dev/null \
+            | grep -qE "^(running|degraded)$"; do sleep 1; done'
+          echo "systemd is up in the node container"
       - name: Supply what Warewulf and the head node would have
         run: docker exec node /src/ansible/tests/prepare-node-container.sh
       - name: local.yml --check, as the node would run it
@@ -219,5 +217,6 @@ jobs:
         with:
           python-version: "3.13"
       - run: pip install --disable-pip-version-check "ansible-core>=2.18" molecule "molecule-plugins[docker]" docker
+      - run: ansible-galaxy collection install community.docker
       - name: local.yml converges, then converges again with changed=0
         run: molecule test -s node_pull

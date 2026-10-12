@@ -28,7 +28,12 @@
     - name: "Drain {{ rolling_node }}"
       become: true
       ansible.builtin.command:
-        argv: [scontrol, update, "NodeName={{ rolling_node }}", State=DRAIN, "Reason=rolling update to {{ rolling_tag }}"]
+        argv:
+          - scontrol
+          - update
+          - "NodeName={{ rolling_node }}"
+          - State=DRAIN
+          - "Reason=rolling update to {{ rolling_tag }}"
       changed_when: true
 
     - name: "Wait for {{ rolling_node }}'s running jobs to finish"

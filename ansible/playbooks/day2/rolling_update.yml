@@ -1,5 +1,5 @@
 ---
-# make rolling-update TAG=sha-<new> [NODES=cn01,cn02]
+# make rolling-update TAG=sha-<new> [NODES=<node>[,<node>...]]
 #
 # One node at a time: drain (running jobs finish), point the node at the new
 # image, power-cycle it over Redfish, wait until it has pulled, converged and

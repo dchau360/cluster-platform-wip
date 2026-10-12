@@ -93,10 +93,10 @@ promote: ## Move the deployed ref to a green commit. make promote SHA=<commit>
 convergence-status: ## Each node's last pull run from NetBox; non-zero if stale/failed
 	@$(RUN) $(S)/convergence-status.sh
 
-drain: ## Drain Slurm nodes. make drain NODES=cn01[,cn02] [WAIT=1] [REASON=...]
+drain: ## Drain Slurm nodes. make drain NODES=<node>[,<node>...] [WAIT=1] [REASON=...]
 	@$(RUN) $(S)/day2.sh drain
 
-resume: ## Resume Slurm nodes. make resume NODES=cn01[,cn02]
+resume: ## Resume Slurm nodes. make resume NODES=<node>[,<node>...]
 	@$(RUN) $(S)/day2.sh resume
 
 reconfigure: ## Re-render the controller's Slurm files from NetBox and reconfigure

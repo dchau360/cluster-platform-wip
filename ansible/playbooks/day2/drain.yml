@@ -1,5 +1,5 @@
 ---
-# make drain NODES=cn01,cn02 [REASON=...] [WAIT=1]
+# make drain NODES=<node>[,<node>...] [REASON=...] [WAIT=1]
 # Stops new work landing on the nodes; running jobs finish. WAIT=1 blocks
 # until each node is `drained` (no job left), which is what a reboot needs.
 - name: Drain nodes
