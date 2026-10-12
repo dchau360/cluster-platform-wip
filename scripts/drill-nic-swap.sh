@@ -118,9 +118,9 @@ fi
 lease_forget "$pre_domain_mac" "$new_mac"
 
 phase_begin node-boot "$lab_name"
-watch_pid="$(node_boot "$lab_name")"
+node_boot "$lab_name"
 phase_end node-boot "$lab_name"
-wait "$watch_pid" || warn "$lab_name did not reach a login prompt in ${BOOT_PHASE_TIMEOUT:-300}s"
+wait "$NODE_BOOT_WATCH_PID" || warn "$lab_name did not reach a login prompt in ${BOOT_PHASE_TIMEOUT:-300}s"
 
 echo
 echo "=============================================================="

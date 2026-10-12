@@ -55,15 +55,16 @@ timed rollback-converge "" -- converge_run
 # 2. Reboot the node so it boots the rolled-back image.
 node_stop "$lab_name"
 phase_begin node-boot "$lab_name"
-watch_pid="$(node_boot "$lab_name")"
+node_boot "$lab_name"
 phase_end node-boot "$lab_name"
 
-if ! wait "$watch_pid"; then
+if ! wait "$NODE_BOOT_WATCH_PID"; then
   warn "$lab_name did not reach a login prompt in ${BOOT_PHASE_TIMEOUT:-300}s"
 fi
 
 # 3. Read the tag back off the console the in-node identity check writes to.
 reference="$(node_console_value "$lab_name" 'image-reference [^ ]+')"
+reference="${reference#image-reference }"
 echo
 echo "server imported marker : $(sudo cat "$WAREWULF_STATE_ROOT/.cluster-lab-image" 2>/dev/null || echo unknown)"
 echo "node ${lab_name} reports : ${reference:-<nothing>}"

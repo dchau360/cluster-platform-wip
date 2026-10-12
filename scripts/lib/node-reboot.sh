@@ -24,17 +24,23 @@ node_domain_mac() {
 # node_boot <name>
 #
 # Power a stopped domain on and watch its serial console from byte zero in the
-# background. Prints the watcher PID so the caller can wait for it. The caller
-# must have stopped the domain; starting a running one would be a no-op and the
+# background. Sets NODE_BOOT_WATCH_PID to the watcher so the caller can wait
+# for the boot. Not printed and not captured with `$(...)`: the watcher keeps
+# the stdout pipe open, so a command substitution would block until the whole
+# boot finished and would swallow the phase markers with it. The caller must
+# have stopped the domain; starting a running one would be a no-op and the
 # watcher would follow a console nobody is writing.
+NODE_BOOT_WATCH_PID=""
 node_boot() {
   local name="$1" log
   log="$(node_console_path "$name")"
-  ensure_dir "$LAB_VM_DIR/console" 0711
+  ensure_dir "$LAB_VM_DIR/console" 0711 >&2
   sudo truncate -s 0 "$log" 2>/dev/null || true
   "${VIRSH[@]}" start "$name" >/dev/null
   boot_phases_watch "$name" "$log" 0 &
-  printf '%s' "$!"
+  # Read by the caller after the boot. shellcheck sees one file at a time.
+  # shellcheck disable=SC2034
+  NODE_BOOT_WATCH_PID=$!
 }
 
 # node_stop <name> — hard stop; the state that matters is on the server.
@@ -62,9 +68,13 @@ node_wait_for_console() {
   return 1
 }
 
-# node_console_value <name> <ere-pattern> — last match, trimmed.
+# node_console_value <name> <ere-pattern> — last match, CR stripped.
+#
+# The serial console writes CRLF, and `grep -o` will carry the `\r` into the
+# match, which then fails every suffix comparison. Strip it here so callers
+# compare plain text.
 node_console_value() {
   local name="$1" pattern="$2" log
   log="$(node_console_path "$name")"
-  sudo grep -aoE "$pattern" "$log" 2>/dev/null | tail -1 || true
+  sudo grep -aoE "$pattern" "$log" 2>/dev/null | tr -d '\r' | tail -1 || true
 }
