@@ -4,4 +4,5 @@
   ansible.builtin.package: {name: slurmctld, state: present}
 - name: Enable and start Slurm controller
   become: true
+  when: not ansible_check_mode
   ansible.builtin.systemd_service: {name: slurmctld, enabled: true, state: started}

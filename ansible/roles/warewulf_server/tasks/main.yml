@@ -4,4 +4,5 @@
   ansible.builtin.package: {name: warewulf, state: present}
 - name: Enable Warewulf service
   become: true
+  when: not ansible_check_mode
   ansible.builtin.systemd_service: {name: warewulfd, enabled: true, state: started}

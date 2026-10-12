@@ -25,6 +25,7 @@
     mode: "0644"
 - name: Enable NetBox service
   become: true
+  when: not ansible_check_mode
   ansible.builtin.systemd_service:
     name: cluster-netbox
     enabled: true
