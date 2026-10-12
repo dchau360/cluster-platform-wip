@@ -2,7 +2,7 @@
 - name: Install container runtime
   become: true
   ansible.builtin.package:
-    name: [docker.io, docker-compose-v2, openssl, python3-venv]
+    name: [docker.io, docker-compose-v2, openssl, python3-pytz, python3-venv]
     state: present
 - name: Create the local NetBox secret directory
   become: true
