@@ -133,9 +133,10 @@ node_mac() {
 }
 
 # Address handed out statically to node index 1..NODE_COUNT. The offset is
-# a variable so the formula has one definition; the Warewulf role reads the
-# same variable to define a node's address in Warewulf's database.
-node_ip() { printf '10.42.0.%d' $(( ${PROV_NODE_IP_OFFSET:-10} + $1 )); }
+# a variable so the formula has one definition; the Warewulf role and
+# netbox/seed.py read the same variable, so the address a node holds and the
+# address this function computes cannot diverge.
+node_ip() { printf '10.42.0.%d' $(( ${PROV_NODE_IP_OFFSET:-19} + $1 )); }
 
 lab_node_indexes() { seq 1 "${NODE_COUNT}"; }
 
