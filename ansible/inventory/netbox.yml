@@ -1,7 +1,7 @@
 ---
 plugin: netbox.netbox.nb_inventory
-api_endpoint: "{{ lookup('env', 'NETBOX_URL') }}"
-token: "{{ lookup('env', 'NETBOX_TOKEN') }}"
+# The plugin reads NETBOX_API and NETBOX_TOKEN from the environment. Keeping
+# them out of this public file prevents lab endpoints and credentials leaking.
 validate_certs: true
 group_by:
   - device_roles
