@@ -28,7 +28,7 @@ env:
   # The node image local.yml is tested in: the image nodes boot, with the
   # ansible-core nodes run. Pinned, so a test result names the image it ran
   # against; bump it in the same change that deploys a new tag.
-  COMPUTE_IMAGE: ghcr.io/dchau360/cluster-images-wip/compute-slurm:latest
+  COMPUTE_IMAGE: ghcr.io/dchau360/cluster-images-wip/compute-slurm:sha-54a0b45db3a1
 
 jobs:
   secrets:
@@ -217,6 +217,6 @@ jobs:
         with:
           python-version: "3.13"
       - run: pip install --disable-pip-version-check "ansible-core>=2.18" molecule "molecule-plugins[docker]" docker
-      - run: ansible-galaxy collection install community.docker
+      - run: ansible-galaxy collection install community.docker ansible.posix
       - name: local.yml converges, then converges again with changed=0
         run: molecule test -s node_pull

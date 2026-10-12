@@ -10,7 +10,7 @@ driver:
 platforms:
   - name: cn01
     hostname: cn01
-    image: "${COMPUTE_IMAGE:-ghcr.io/dchau360/cluster-images-wip/compute-slurm:latest}"
+    image: "${COMPUTE_IMAGE:?set COMPUTE_IMAGE to the pinned node image}"
     pre_build_image: true
     privileged: true
     cgroupns_mode: host
