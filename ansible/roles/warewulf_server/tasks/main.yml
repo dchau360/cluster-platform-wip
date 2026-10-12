@@ -1,6 +1,7 @@
 ---
 - name: Install Warewulf server package
   become: true
+  when: not ansible_check_mode
   ansible.builtin.package: {name: warewulf, state: present}
 - name: Enable Warewulf service
   become: true
