@@ -1,0 +1,21 @@
+# Rendered by the sushy_emulator role. Python syntax, read by sushy-tools.
+#
+# This is the management plane for the lab's libvirt/KVM nodes. It offers
+# real power control and real boot-order changes over Redfish. It is not a
+# vendor BMC: the BIOS attributes it reports are synthetic. See
+# docs/redfish.md.
+
+SUSHY_EMULATOR_LISTEN_IP = '{{ sushy_emulator_listen_ip }}'
+SUSHY_EMULATOR_LISTEN_PORT = {{ sushy_emulator_listen_port }}
+SUSHY_EMULATOR_LIBVIRT_URI = '{{ sushy_emulator_libvirt_uri }}'
+
+# Real boot-order changes: sushy rewrites the libvirt domain's
+# per-device `<boot order=...>` elements. Setting this true would replace
+# that with a floppy stub, so it stays false.
+SUSHY_EMULATOR_IGNORE_BOOT_DEVICE = {{ sushy_emulator_ignore_boot_device | bool | lower }}
+
+# No TLS. The endpoint is bound to the provisioning segment only, and the
+# nodes on it are the ones being managed; adding a self-signed cert here
+# would not make the lab more honest, only more complicated.
+SUSHY_EMULATOR_SSL_CERT = None
+SUSHY_EMULATOR_SSL_KEY = None

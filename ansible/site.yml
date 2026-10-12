@@ -43,3 +43,4 @@
     - prometheus
     - git_mirror
     - warewulf_server
+    - sushy_emulator

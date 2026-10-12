@@ -63,6 +63,22 @@ above the line record today; the ones below record as they are built, into
 the same NDJSON stream. That is how the 1-to-N curve gets measured without
 anyone retrofitting instrumentation.
 
+## The management plane
+
+Power and boot order are driven over Redfish by `sushy-emulator` on the
+libvirt/KVM driver, the path OpenStack Ironic uses in its own CI. It binds
+to the provisioning address only, and `scripts/redfish.sh` is the client
+the node power/boot automation calls:
+
+```text
+redfish.sh  --Redfish/HTTP-->  sushy-emulator (10.42.0.1:8000)  --libvirt-->  qemu/kvm
+```
+
+Real power on/off/cycle and real persistent boot-order changes. **Not**
+vendor BIOS attributes: the emulator reports a fixed synthetic set. See
+[`redfish.md`](redfish.md) for the capability table; the line between the
+two is written down on purpose.
+
 ## Where configuration comes from
 
 One path, no exceptions.

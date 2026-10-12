@@ -1,0 +1,92 @@
+---
+- name: Install the emulator runtime dependencies
+  become: true
+  ansible.builtin.apt:
+    name:
+      - python3-venv
+      - python3-libvirt
+    state: present
+    update_cache: true
+
+# The venv must see the system libvirt bindings. A venv created without
+# --system-site-packages imports sushy-tools happily and then fails at the
+# first request with "libvirt driver not loaded", which is a failure that
+# looks like a broken emulator rather than a missing import. Detect and
+# replace that venv rather than leaving it in place.
+- name: Check the emulator virtualenv
+  become: true
+  ansible.builtin.stat:
+    path: "{{ sushy_emulator_venv }}/pyvenv.cfg"
+  register: sushy_emulator_venv_cfg
+
+- name: Read the virtualenv configuration
+  become: true
+  ansible.builtin.slurp:
+    src: "{{ sushy_emulator_venv }}/pyvenv.cfg"
+  register: sushy_emulator_venv_cfg_data
+  when: sushy_emulator_venv_cfg.stat.exists
+
+- name: Drop a virtualenv that cannot import the system libvirt bindings
+  become: true
+  ansible.builtin.file:
+    path: "{{ sushy_emulator_venv }}"
+    state: absent
+  when:
+    - sushy_emulator_venv_cfg.stat.exists
+    - "'include-system-site-packages = true'
+       not in (sushy_emulator_venv_cfg_data.content | b64decode)"
+
+- name: Create the emulator virtualenv
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    cmd: "python3 -m venv --system-site-packages {{ sushy_emulator_venv }}"
+    creates: "{{ sushy_emulator_venv }}/bin/python"
+
+- name: Install sushy-tools into the virtualenv
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    cmd: >-
+      {{ sushy_emulator_venv }}/bin/pip install --disable-pip-version-check
+      --upgrade {{ sushy_emulator_package }}
+  register: sushy_emulator_pip
+  changed_when: "'Successfully installed' in sushy_emulator_pip.stdout"
+
+- name: Create the emulator configuration directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ sushy_emulator_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Render the emulator configuration
+  become: true
+  ansible.builtin.template:
+    src: sushy-emulator.conf.j2
+    dest: "{{ sushy_emulator_config }}"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Restart sushy-emulator
+
+- name: Install the emulator systemd unit
+  become: true
+  ansible.builtin.template:
+    src: sushy-emulator.service.j2
+    dest: /etc/systemd/system/sushy-emulator.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart sushy-emulator
+
+- name: Enable and start the emulator
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.systemd_service:
+    name: sushy-emulator
+    enabled: true
+    state: started
+    daemon_reload: true

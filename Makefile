@@ -24,6 +24,7 @@ export N
 
 .PHONY: help up down down-hard demo nodes-up nodes-down status timings \
         systemd-install verify verify-isolation verify-idempotent \
+        redfish redfish-demo \
         check-host-values lint lint-yaml lint-ansible lint-shell secrets \
         tracked-secrets git-identity cold-start-check
 
@@ -58,6 +59,18 @@ systemd-install: ## Render and install the lab systemd units
 
 status: ## Show units, segment, nodes, leases
 	@$(RUN) $(S)/status.sh
+
+# --- management plane ------------------------------------------------------
+
+redfish: ## List the systems sushy-emulator exposes over Redfish
+	@$(RUN) $(S)/redfish.sh list
+
+redfish-demo: ## Power-cycle the first node and flip its boot order over Redfish
+	@$(RUN) -c 'source $(S)/lib/common.sh; lab_load_env; \
+	  node=$$(node_name 1); \
+	  bash $(S)/redfish.sh power "$$node" cycle; \
+	  bash $(S)/redfish.sh boot  "$$node" hd; \
+	  bash $(S)/redfish.sh boot  "$$node" pxe'
 
 timings: ## Print the timing table for the most recent run
 	@$(RUN) -c 'source $(S)/lib/common.sh; lab_load_env; source $(S)/lib/timing.sh; timing_report'

@@ -1,0 +1,25 @@
+---
+# sushy-emulator: the Redfish endpoint OpenStack Ironic uses in its own CI.
+#
+# It is the management plane for the lab's libvirt/KVM nodes: real power
+# on/off/cycle and real boot-order changes, spoken over Redfish. It is NOT a
+# vendor BMC and does not expose vendor BIOS attributes; see docs/redfish.md.
+sushy_emulator_dir: /opt/sushy-emulator
+sushy_emulator_venv: "{{ sushy_emulator_dir }}/venv"
+sushy_emulator_config_dir: /etc/sushy-emulator
+sushy_emulator_config: "{{ sushy_emulator_config_dir }}/sushy-emulator.conf"
+sushy_emulator_package: sushy-tools
+
+# Bind the management API to the provisioning segment only. It is not DHCP
+# or TFTP, but the rule the lab holds itself to is that nothing lab-facing
+# is offered on an interface that can reach the home LAN.
+sushy_emulator_listen_ip: "{{ lab_prov_gw }}"
+sushy_emulator_listen_port: >-
+  {{ lookup('env', 'SUSHY_EMULATOR_PORT') | default(8000, true) | int }}
+sushy_emulator_libvirt_uri: >-
+  {{ lookup('env', 'LIBVIRT_URI') | default('qemu:///system', true) }}
+
+# Keep the emulator's boot-order override real: sushy rewrites the libvirt
+# domain's per-device `<boot order=...>` elements. `ignore boot device`
+# would replace that with a floppy stub instead.
+sushy_emulator_ignore_boot_device: false

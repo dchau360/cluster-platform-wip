@@ -1,0 +1,14 @@
+[Unit]
+Description=Sushy Redfish emulator for the lab libvirt/KVM nodes
+Documentation=https://docs.openstack.org/sushy-tools/latest/
+After=libvirtd.service
+Wants=libvirtd.service
+
+[Service]
+Type=simple
+ExecStart={{ sushy_emulator_venv }}/bin/sushy-emulator --config {{ sushy_emulator_config }} --libvirt-uri {{ sushy_emulator_libvirt_uri }}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
