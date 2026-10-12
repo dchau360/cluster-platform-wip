@@ -35,8 +35,11 @@ if [[ ! "$INDEX" =~ ^[0-9]+$ ]] || (( INDEX < 1 )); then
   die "NODE must be a positive integer"
 fi
 lab_name="$(node_name "$INDEX")"
-# A different locally-administered address. Nothing here is a real MAC.
-new_mac="$(printf '%s:00:ff:%02x' "${PROV_MAC_OUI:-52:54:00}" "$INDEX")"
+# Two locally-administered addresses for the node. The drill swaps between
+# them, so a repeat run is still a real change rather than a no-op. Nothing
+# here is a real MAC.
+base_mac="$(node_mac "$INDEX")"
+alt_mac="$(printf '%s:00:ff:%02x' "${PROV_MAC_OUI:-52:54:00}" "$INDEX")"
 
 counters_init
 timing_init
@@ -74,6 +77,11 @@ pre_iface_id="$(nb_interface "$device_id" id)"
 pre_iface_mac="$(nb_interface "$device_id" mac_address)"
 pre_domain_mac="$(node_domain_mac "$lab_name")"
 [[ -n "$pre_domain_mac" ]] || die "$lab_name is not defined — run 'make nodes-up' first"
+if [[ "${pre_domain_mac,,}" == "${base_mac,,}" ]]; then
+  new_mac="$alt_mac"
+else
+  new_mac="$base_mac"
+fi
 echo "domain MAC          : $pre_domain_mac"
 echo "warewulf hwaddr     : $(sudo wwctl node list -a "$lab_name" 2>/dev/null | awk '/NetDevs\[default\]\.Hwaddr/{print $NF}')"
 echo "netbox device       : $pre_device (position $pre_position, id $device_id)"
@@ -156,11 +164,11 @@ check() { # <description> <expected> <actual>
   fi
 }
 
-check "the MAC changed"                 "$new_mac"    "$post_domain_mac"
-check "NetBox recorded the new MAC"     "$new_mac"    "$post_iface_mac"
-check "the NetBox device kept its name" "$pre_device" "$post_device"
-check "the hostname did not change"     "$lab_name"   "$observed_host"
-check "the node still booted as itself" "$lab_name login:" "$console_login"
+check "the MAC changed"                 "${new_mac,,}"      "${post_domain_mac,,}"
+check "NetBox recorded the new MAC"     "${new_mac,,}"      "${post_iface_mac,,}"
+check "the NetBox device kept its name" "$pre_device"       "$post_device"
+check "the hostname did not change"     "$lab_name"         "$observed_host"
+check "the node still booted as itself" "$lab_name login:"  "$console_login"
 
 echo
 if (( fails > 0 )); then
