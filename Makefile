@@ -27,8 +27,9 @@ export N
         rolling-update burnin-gate check-node-roles test-python \
         systemd-install verify verify-isolation verify-idempotent \
         redfish redfish-demo converge rollback drill-nic-swap drill-reprovision \
+        drill-cold-start \
         acceptance nodes-activate slurm-ready rdma-test \
-        check-host-values lint lint-yaml lint-ansible lint-shell secrets \
+        check-host-values check-env-example lint lint-yaml lint-ansible lint-shell secrets \
         tracked-secrets git-identity cold-start-check
 
 help: ## Show this help
@@ -53,6 +54,9 @@ drill-nic-swap: ## Swap a node's MAC; prove hostname and NetBox identity hold
 
 drill-reprovision: ## Rebuild one node from bare metal; every neighbour stays up
 	@$(RUN) $(S)/drill-reprovision.sh
+
+drill-cold-start: ## One stage of the cold-start drill. make drill-cold-start STAGE=before|after
+	@$(RUN) $(S)/drill-cold-start.sh $(STAGE)
 
 acceptance: ## Run every acceptance drill in order (TAG=<tag> for the rollback)
 	@$(RUN) $(S)/acceptance-drills.sh
@@ -155,10 +159,13 @@ need = @command -v $(1) >/dev/null 2>&1 || { \
 	  printf 'error: %s not found, so this gate cannot run.\n       %s\n' '$(1)' '$(2)' >&2; \
 	  exit 127; }
 
-lint: check-host-values secrets tracked-secrets git-identity lint-yaml lint-ansible lint-shell check-node-roles test-python ## Run every repo gate
+lint: check-host-values check-env-example secrets tracked-secrets git-identity lint-yaml lint-ansible lint-shell check-node-roles test-python ## Run every repo gate
 
 check-host-values: ## Fail if any host-specific value is in a tracked file
 	@$(RUN) $(S)/check-no-host-values.sh
+
+check-env-example: ## Fail if lab/local.env.example is not safe to source
+	@$(RUN) $(S)/check-env-example-is-sourceable.sh
 
 tracked-secrets: ## Fail if a tracked file is named like key material or lab state
 	@$(RUN) $(S)/check-no-tracked-secrets.sh
