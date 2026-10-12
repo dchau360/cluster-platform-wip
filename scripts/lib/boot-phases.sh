@@ -67,10 +67,11 @@ boot_phases_skip() {
 # boot_phases_watch <node> <console-log> <byte-offset>
 #
 # Follow one node's console from <byte-offset> and record the boot phases.
-# Intended to run in the background, started immediately after `virsh start`,
-# with <byte-offset> the size of the console file before that boot appended to
-# it. Returns 0 once the login prompt is seen, non-zero on timeout, after
-# recording status=fail on the phase that never ended.
+# Intended to run in the background, started immediately after `virsh start`.
+# The caller clears the console first and passes 0: libvirt writes the
+# per-domain console from byte zero on every start, so a pre-start size would
+# skip the whole boot. Returns 0 once the login prompt is seen, non-zero on
+# timeout, after recording status=fail on the phase that never ended.
 boot_phases_watch() {
   local node="$1" log="$2" offset="${3:-0}"
   local timeout="${BOOT_PHASE_TIMEOUT:-300}"
@@ -83,8 +84,8 @@ boot_phases_watch() {
   while (( $(date +%s) < deadline )); do
     size="$(sudo stat -c %s "$log" 2>/dev/null || printf 0)"
     if (( size > last )); then
-      # Only this boot's bytes. `tr -d '\r'` collapses the console's CRLF so a
-      # marker cannot be split across a carriage return.
+      # Only the bytes read so far. `tr -d '\r'` collapses the console's CRLF
+      # so a marker cannot be split across a carriage return.
       chunk="$(sudo tail -c +$(( last + 1 )) "$log" 2>/dev/null | tr -d '\r' || true)"
       last="$size"
       buf+="$chunk"

@@ -41,9 +41,14 @@ for f in "${IDENTITY_FILES[@]}"; do
   fi
 done
 
-# Public fingerprints only, and only for keys that exist.
-shopt -s nullglob
-for pub in /etc/ssh/ssh_host_*_key.pub; do
+# Public fingerprints only, and only for the key types the cluster asks
+# warewulf to generate. The built-in ssh.host_keys overlay also ships a DSA
+# template; that type is not in the configured key list, so its file renders
+# empty and ssh-keygen would reject it.
+for priv in "${IDENTITY_FILES[@]}"; do
+  [[ "$priv" == /etc/ssh/ssh_host_*_key ]] || continue
+  pub="${priv}.pub"
+  [[ -f "$pub" ]] || continue
   ssh-keygen -l -f "$pub" || status=1
 done
 

@@ -93,6 +93,19 @@
     enabled: true
     state: started
 
+# warewulf ships the `ssh.host_keys` overlay but does not generate the keys it
+# renders: its `{{Include "keys/ssh_host_*"}}` templates read
+# /usr/local/etc/warewulf/keys/ on the server, and a key that is not there
+# renders to an empty file in every node. `wwctl configure ssh` creates one key
+# per configured type and is idempotent (it skips keys that already exist).
+- name: Generate the cluster SSH host keys
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    cmd: wwctl configure ssh
+  changed_when: false
+  notify: Rebuild overlays
+
 # ---------------------------------------------------------------------------
 # Node image, imported from a public registry.
 # ---------------------------------------------------------------------------
@@ -320,7 +333,7 @@
       not in (warewulf_server_existing_nodes | default({}))
   ansible.builtin.command:
     cmd: >-
-      wwctl node add -y {{ lab_node_name_prefix }}{{ '%02d' | format(item) }}
+      wwctl node add {{ lab_node_name_prefix }}{{ '%02d' | format(item) }}
       --ipaddr {{ warewulf_server_network }}.{{ (warewulf_server_node_ip_offset | int) + item }}
       --netdev {{ warewulf_server_node_netdev }}
       --hwaddr {{ warewulf_server_mac_oui }}:00:{{ '%02x' | format(item // 256) }}:{{ '%02x' | format(item % 256) }}

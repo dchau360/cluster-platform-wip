@@ -132,14 +132,17 @@ for i in $(lab_node_indexes); do
   phase_end node-define "$name"
 
   phase_begin node-start "$name"
-  # The console is opened append=on, so everything already in it belongs to an
-  # earlier boot. Record the size before `virsh start` and the watcher reads
-  # only the bytes this boot appended.
   console_log="$LAB_VM_DIR/console/${name}.log"
-  console_off="$(sudo stat -c %s "$console_log" 2>/dev/null || printf 0)"
   if domain_running "$name"; then
     ok "domain $name running"
   else
+    # libvirt writes the per-domain console to this file from byte zero on
+    # every start (the size before the start does not survive), so clear it
+    # ourselves and have the watcher read from byte zero. Only for a node we
+    # are actually starting: truncating a running node's console would throw
+    # away the boot being observed.
+    sudo truncate -s 0 "$console_log" 2>/dev/null || true
+
     # Retry, because on a cold start systemd-machined can still be coming
     # up when libvirt asks it to register the machine scope, and the start
     # fails with "Start job for unit machine-qemu-...scope failed". It is a
@@ -154,7 +157,7 @@ for i in $(lab_node_indexes); do
     changed "domain $name started"
     # Observe the boot in the background so it can run while the DHCP wait
     # below and the next node's start proceed in parallel.
-    boot_phases_watch "$name" "$console_log" "$console_off" &
+    boot_phases_watch "$name" "$console_log" 0 &
     BOOT_WATCH_PID["$name"]=$!
   fi
   phase_end node-start "$name"

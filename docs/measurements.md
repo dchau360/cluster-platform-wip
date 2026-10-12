@@ -108,11 +108,11 @@ duration. The phase boundaries are the markers, in order: `iPXE initialising
 devices`, `Downloading kernel image`, the kernel fetch's `ok`,
 the initramfs fetch's `ok`, `warewulf: invoking /sbin/init`, and `login:`.
 
-The console is opened `append=on`, so the watcher starts from the file size
-recorded before `virsh start` and reads only the bytes this boot appended. A
-node that was already running is recorded as `skip` for every boot phase: it
-did not boot this run, and timing the console it is not writing would be a
-measurement of nothing. A boot that never reaches a marker is recorded with
+The console is per-boot: libvirt writes it from byte zero on every start,
+so the watcher reads from zero after the harness clears it, and a node that
+was already running is recorded as `skip` for every boot phase: it did not
+boot this run, and timing a console it is not writing would be a measurement
+of nothing. A boot that never reaches a marker is recorded with
 `status=fail` on the phase it stalled in, after `BOOT_PHASE_TIMEOUT` seconds —
 not silently dropped.
 
