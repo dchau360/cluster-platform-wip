@@ -43,6 +43,7 @@ echo "== check 1: the assignment lines source cleanly in a clean shell"
 # empty file sources perfectly, and the gate reports a pass it did not earn.
 # The same grep lab_load_env uses, so this tests the real stream rather than
 # an approximation of it.
+# shellcheck disable=SC2016 # `$1` is the inner shell's argument, not ours
 if out="$(env -i "PATH=$PATH" bash -euo pipefail -c '
     # shellcheck disable=SC1090
     source <(grep -E "^[A-Za-z_][A-Za-z0-9_]*=" "$1")' _ "$ENV_EXAMPLE" 2>&1)"; then

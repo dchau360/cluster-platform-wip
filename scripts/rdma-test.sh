@@ -137,10 +137,57 @@ run_one() {
   [[ "$status" == ok ]]
 }
 
+# The TCP number over the same link, for the only comparison that means
+# anything here. An HCA's line rate is not the yardstick: the hardware data
+# path is exactly what this lab does not have. What Soft-RoCE is standing in
+# for is the TCP path over this same virtio NIC, so that is what to measure
+# it against.
+tcp_reference() {
+  local server_log="$out_dir/iperf3.server.log" client_log="$out_dir/iperf3.client.log"
+  log "iperf3 over the same link, as the TCP reference"
+
+  srun --nodes=1 --nodelist="$server" --time="$(( (RDMA_TEST_TIMEOUT + 59) / 60 ))" \
+       --chdir=/tmp --job-name="iperf3-server" \
+       iperf3 --server --one-off > "$server_log" 2>&1 &
+  local server_job=$!
+
+  local waited=0
+  while (( waited < 60 )); do
+    squeue --noheader --name=iperf3-server --states=R --format='%i' 2>/dev/null | grep -q . && break
+    sleep 1
+    waited=$((waited + 1))
+  done
+  sleep 2
+
+  local status=ok
+  srun --nodes=1 --nodelist="$client" --time="$(( (RDMA_TEST_TIMEOUT + 59) / 60 ))" \
+       --chdir=/tmp --job-name="iperf3-client" \
+       iperf3 --client "$server_ip" --time 10 > "$client_log" 2>&1 || status=fail
+
+  wait "$server_job" 2>/dev/null || true
+  scancel --name=iperf3-server --quiet 2>/dev/null || true
+
+  local line
+  line="$(grep -E 'sender|receiver' "$client_log" | tail -2 || true)"
+  if [[ -z "$line" ]]; then
+    warn "iperf3 produced no summary line"
+    sed -n '1,20p' "$client_log" >&2
+    status=fail
+  else
+    printf '%s\n' "$line"
+  fi
+  [[ "$status" == ok ]]
+}
+
 failures=0
 for tool in $RDMA_TEST_TOOLS; do
   if timed "rdma-${tool}" "" -- run_one "$tool"; then :; else failures=$((failures + 1)); fi
 done
+
+echo
+# A failed reference is not a failed RDMA test, so it warns rather than
+# counting against the result.
+timed tcp-reference "" -- tcp_reference || warn "the TCP reference did not run; the RDMA result stands on its own"
 
 echo
 echo "logs and results: $out_dir"
