@@ -58,7 +58,7 @@ def normalize_guid(value: str | None) -> str | None:
     text = re.sub(r"[.:\s-]", "", text)
     if len(text) != 16 or not _HEX.match(text):
         return None
-    guid = ":".join(text[i:i + 4] for i in range(0, 16, 4))
+    guid = ":".join(text[i:i + 4] for i in range(0, len(text), 4))
     return None if guid == ZERO_GUID else guid
 
 
@@ -70,7 +70,7 @@ def normalize_gid(value: str | None) -> str | None:
     text = re.sub(r"[.:\s-]", "", text)
     if len(text) != 32 or not _HEX.match(text):
         return None
-    return ":".join(text[i:i + 4] for i in range(0, 32, 4))
+    return ":".join(text[i:i + 4] for i in range(0, len(text), 4))
 
 
 def gid_to_port_guid(gid: str | None) -> str | None:
@@ -101,7 +101,7 @@ def guid_to_client_id(guid: str | None) -> str | None:
     if normalized is None:
         return None
     raw = normalized.replace(":", "")
-    return ":".join(raw[i:i + 2] for i in range(0, 16, 2))
+    return ":".join(raw[i:i + 2] for i in range(0, len(raw), 2))
 
 
 def reservation_line(hostname: str | None, ip: str | None,
