@@ -112,7 +112,7 @@ timing_report() {
   echo
   printf '%-24s %-10s %10s %8s\n' PHASE NODE SECONDS STATUS
   printf '%-24s %-10s %10s %8s\n' ------------------------ ---------- ---------- --------
-  sed -e 's/[{}"]//g' -e 's/,/\n/g' "$file" \
+  sed -e 's/[{}"]//g' -e 's/[[:space:]]*\([,:]\)[[:space:]]*/\1/g' -e 's/,/\n/g' "$file" \
   | awk -F: '
       /^phase/  {phase=$2}
       /^node/   {node=($2==""?"-":$2)}
@@ -132,7 +132,7 @@ timing_report() {
   local csv="${file%.ndjson}.csv"
   {
     echo "run,n,phase,node,seconds,status"
-    sed -e 's/[{}"]//g' "$file" \
+    sed -e 's/[{}"]//g' -e 's/[[:space:]]*\([,:]\)[[:space:]]*/\1/g' "$file" \
     | awk -F, '{r=n=p=nd=s=st="";
         for(i=1;i<=NF;i++){split($i,kv,":");
           if(kv[1]=="run")r=kv[2]; else if(kv[1]=="n")n=kv[2];

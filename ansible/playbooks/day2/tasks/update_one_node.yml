@@ -23,7 +23,7 @@
   block:
     - name: Start the drain clock
       ansible.builtin.set_fact:
-        rolling_t0: "{{ now(utc=true).timestamp() }}"
+        rolling_t0: "{{ now().timestamp() }}"
 
     - name: "Drain {{ rolling_node }}"
       become: true
@@ -65,7 +65,7 @@
 
     - name: Start the resume clock
       ansible.builtin.set_fact:
-        rolling_t3: "{{ now(utc=true).timestamp() }}"
+        rolling_t3: "{{ now().timestamp() }}"
 
     - name: "Resume {{ rolling_node }}"
       become: true

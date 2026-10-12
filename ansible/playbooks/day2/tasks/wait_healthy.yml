@@ -4,7 +4,7 @@
 # A failed pull ends the wait at once rather than at the timeout.
 - name: Start the healthy clock
   ansible.builtin.set_fact:
-    rolling_t2: "{{ now(utc=true).timestamp() }}"
+    rolling_t2: "{{ now().timestamp() }}"
 
 - name: "Find the node's NetBox device: {{ rolling_node }}"
   ansible.builtin.uri:
