@@ -95,10 +95,14 @@
 
     - name: Assemble the raw measurements
       vars:
-        burnin_cpu_yaml: >-
-          {{ (burnin_metrics.results[0].content | default('') | b64decode | from_yaml) or {} }}
-        burnin_mem_yaml: >-
-          {{ (burnin_metrics.results[1].content | default('') | b64decode | from_yaml) or {} }}
+        # stress-ng 0.15 emits a YAML-like report containing an unquoted
+        # colon in its generator string. PyYAML rejects the whole document,
+        # so extract only the numeric metric we own instead of trusting that
+        # third-party output to be valid YAML.
+        burnin_cpu_text: >-
+          {{ burnin_metrics.results[0].content | default('') | b64decode }}
+        burnin_mem_text: >-
+          {{ burnin_metrics.results[1].content | default('') | b64decode }}
         burnin_fio_job: >-
           {{ ((burnin_fio.stdout | default('{}') | from_json).jobs | default([{}])) | first }}
       ansible.builtin.set_fact:
@@ -111,15 +115,17 @@
               workers: "{{ ansible_processor_vcpus | int }}"
               seconds: "{{ burnin_cpu_seconds | int }}"
               bogo_ops_per_second: >-
-                {{ ((burnin_cpu_yaml.metrics | default([{}]) | first)['bogo-ops-per-second-real-time']
-                    | default(0)) | float }}
+                {{ (burnin_cpu_text
+                    | regex_findall('(?m)^\\s*bogo-ops-per-second-real-time:\\s*([0-9.]+)')
+                    | first | default(0)) | float }}
             memory:
               exit_code: "{{ burnin_memory.rc }}"
               memtotal_mib: "{{ ansible_memtotal_mb | int }}"
               percent: "{{ burnin_memory_percent | int }}"
               bogo_ops_per_second: >-
-                {{ ((burnin_mem_yaml.metrics | default([{}]) | first)['bogo-ops-per-second-real-time']
-                    | default(0)) | float }}
+                {{ (burnin_mem_text
+                    | regex_findall('(?m)^\\s*bogo-ops-per-second-real-time:\\s*([0-9.]+)')
+                    | first | default(0)) | float }}
             disk:
               device: "{{ burnin_disk }}"
               exit_code: "{{ burnin_fio.rc | default(-1) }}"
