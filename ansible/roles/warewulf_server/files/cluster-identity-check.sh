@@ -40,6 +40,15 @@ wwclient_state="$(systemctl show -p ActiveState --value wwclient.service 2>/dev/
 echo "wwclient.service ActiveState=${wwclient_state:-unknown}"
 journalctl -u wwclient.service --no-pager -n 5 -o cat 2>/dev/null | sed 's/^/wwclient: /' || true
 
+# The image this node was provisioned from. The platform writes this into the
+# same runtime overlay as the identity material, so the boot transcript carries
+# the tag the rollback drill reads back.
+if [[ -r /etc/cluster-lab/image-reference ]]; then
+  echo "image-reference $(cat /etc/cluster-lab/image-reference)"
+else
+  echo "image-reference unknown"
+fi
+
 for f in "${IDENTITY_FILES[@]}"; do
   if [[ -e "$f" ]]; then
     stat -c 'present %n mode=%a owner=%u:%g size=%s' "$f"

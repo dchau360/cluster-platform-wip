@@ -180,6 +180,38 @@
     group: root
     mode: "0755"
 
+# The node reports the image it was provisioned from.
+#
+# The tag is the platform's, not the image's: it is the value this role
+# imported and the marker it wrote. Delivering it through the same runtime
+# overlay that carries the node's identity means a rollback changes the tag
+# the booted node reports, so 'roll back, reboot, read the version back' is a
+# complete drill rather than one that needs a human to remember what was
+# imported.
+- name: Create the provisioning-record directory in the identity overlay
+  become: true
+  ansible.builtin.file:
+    path: >-
+      {{ warewulf_server_overlay_dir }}/{{ warewulf_server_identity_overlay
+         }}/rootfs/etc/cluster-lab
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Rebuild overlays
+
+- name: Record the image reference the node was provisioned from
+  become: true
+  ansible.builtin.copy:
+    dest: >-
+      {{ warewulf_server_overlay_dir }}/{{ warewulf_server_identity_overlay
+         }}/rootfs/etc/cluster-lab/image-reference
+    content: "{{ warewulf_server_image_uri }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Rebuild overlays
+
 - name: Deliver the Munge key through the overlay
   become: true
   ansible.builtin.copy:

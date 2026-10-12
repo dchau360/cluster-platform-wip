@@ -24,7 +24,8 @@ export N
 
 .PHONY: help up down down-hard demo nodes-up nodes-down status timings \
         systemd-install verify verify-isolation verify-idempotent \
-        redfish redfish-demo \
+        redfish redfish-demo converge rollback drill-nic-swap drill-reprovision \
+        acceptance \
         check-host-values lint lint-yaml lint-ansible lint-shell secrets \
         tracked-secrets git-identity cold-start-check
 
@@ -38,6 +39,21 @@ help: ## Show this help
 
 up: ## Bring the platform to its desired state (idempotent)
 	@$(RUN) $(S)/up.sh
+
+converge: ## Apply the Ansible play (NetBox, dnsmasq, Warewulf, Redfish, Slurm)
+	@$(RUN) $(S)/converge.sh
+
+rollback: ## One-command image rollback. make rollback TAG=sha-<previous> [NODE=<n>]
+	@$(RUN) $(S)/rollback.sh
+
+drill-nic-swap: ## Swap a node's MAC; prove hostname and NetBox identity hold
+	@$(RUN) $(S)/drill-nic-swap.sh
+
+drill-reprovision: ## Rebuild one node from bare metal; every neighbour stays up
+	@$(RUN) $(S)/drill-reprovision.sh
+
+acceptance: ## Run the acceptance drills in order (TAG=<tag> for the rollback)
+	@$(RUN) $(S)/acceptance-drills.sh
 
 down: ## Stop nodes and the provisioning segment; units stay enabled
 	@$(RUN) $(S)/down.sh
