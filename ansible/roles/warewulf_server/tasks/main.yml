@@ -2,14 +2,14 @@
 - name: Install Warewulf runtime and source-build dependencies
   become: true
   ansible.builtin.apt:
-    name: "{{ warewulf_packages }}"
+    name: "{{ warewulf_server_packages }}"
     state: present
     update_cache: true
 
 - name: Create the Warewulf source cache
   become: true
   ansible.builtin.file:
-    path: "{{ warewulf_source_root }}"
+    path: "{{ warewulf_server_source_root }}"
     state: directory
     owner: root
     group: root
@@ -18,9 +18,9 @@
 - name: Download the pinned Warewulf source release
   become: true
   ansible.builtin.get_url:
-    url: "{{ warewulf_source_url }}"
-    dest: "{{ warewulf_source_archive }}"
-    checksum: "sha256:{{ warewulf_source_sha256 }}"
+    url: "{{ warewulf_server_source_url }}"
+    dest: "{{ warewulf_server_source_archive }}"
+    checksum: "sha256:{{ warewulf_server_source_sha256 }}"
     owner: root
     group: root
     mode: "0644"
@@ -28,17 +28,17 @@
 - name: Extract the pinned Warewulf source release
   become: true
   ansible.builtin.unarchive:
-    src: "{{ warewulf_source_archive }}"
-    dest: "{{ warewulf_source_root }}"
+    src: "{{ warewulf_server_source_archive }}"
+    dest: "{{ warewulf_server_source_root }}"
     remote_src: true
-    creates: "{{ warewulf_source_dir }}/Makefile"
+    creates: "{{ warewulf_server_source_dir }}/Makefile"
 
 - name: Build and install Warewulf from the pinned release
   become: true
   ansible.builtin.command:
     cmd: make install
-    chdir: "{{ warewulf_source_dir }}"
-    creates: "{{ warewulf_binary }}"
+    chdir: "{{ warewulf_server_source_dir }}"
+    creates: "{{ warewulf_server_binary }}"
   environment:
     OFFLINE_BUILD: "1"
   notify: Reload systemd
