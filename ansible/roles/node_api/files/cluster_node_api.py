@@ -30,6 +30,7 @@ Standard library only, so the head node needs no extra package.
 
 from __future__ import annotations
 
+import calendar
 import ipaddress
 import json
 import os
@@ -305,7 +306,10 @@ def _label(value) -> str:
 def _epoch(stamp):
     if not stamp or not _STAMP.match(str(stamp)):
         return None
-    return time.mktime(time.strptime(str(stamp)[:19], "%Y-%m-%dT%H:%M:%S")) - time.timezone
+    # timegm reads the struct as UTC. mktime(...) - time.timezone did not:
+    # mktime applies the local DST rule, so in summer every stamp came out
+    # an hour old and the stale alert fired for nodes that had just run.
+    return float(calendar.timegm(time.strptime(str(stamp)[:19], "%Y-%m-%dT%H:%M:%S")))
 
 
 def fleet(nb, role_slug):
@@ -321,6 +325,9 @@ def fleet(nb, role_slug):
     return [(d, *names.get(d["id"], (None, None))) for d in devices]
 
 
+RUNNING_STATUSES = ("staged", "active", "failed")
+
+
 def render_metrics(rows) -> str:
     out = [
         "# HELP cluster_node_last_converged_timestamp_seconds When the node last reported a pull run.",
@@ -328,6 +335,10 @@ def render_metrics(rows) -> str:
     ]
     success, duration, info = [], [], []
     for device, hostname, _address in rows:
+        # Only a node that runs pulls can be stale or failed; a planned or
+        # offline device exported as 0 would fire both alerts forever.
+        if _value(device.get("status")) not in RUNNING_STATUSES:
+            continue
         custom = device.get("custom_fields") or {}
         labels = f'device="{_label(device["name"])}",hostname="{_label(hostname)}"'
         stamp = _epoch(custom.get("last_converged_at"))
