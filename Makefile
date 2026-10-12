@@ -23,6 +23,7 @@ N ?=
 export N
 
 .PHONY: help up down down-hard demo nodes-up nodes-down status timings \
+        discover \
         systemd-install verify verify-isolation verify-idempotent \
         redfish redfish-demo converge rollback drill-nic-swap drill-reprovision \
         acceptance \
@@ -75,6 +76,9 @@ systemd-install: ## Render and install the lab systemd units
 
 status: ## Show units, segment, nodes, leases
 	@$(RUN) $(S)/status.sh
+
+discover: ## Boot a node into the discovery image and verify its NetBox record. NODE=cn01
+	@$(RUN) $(S)/discover.sh
 
 # --- management plane ------------------------------------------------------
 

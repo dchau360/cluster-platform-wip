@@ -37,6 +37,7 @@ lab service and reaches nothing. See
 | iPXE script, kernel and initramfs | `warewulfd` over HTTP on `br-prov` | working |
 | Image fetch, overlay apply, pivot | Warewulf, two-stage `dracut` | working |
 | Per-node overlay: SSH host keys, Munge key | Warewulf runtime overlay | working |
+| Discovery: scrape and self-register in NetBox | `cluster-discovery` runtime overlay + `discovery` image | working |
 | Slurm compute joins the controller | Slurm task | stubbed |
 
 "Working" means observed end to end on the lab host: a q35/OVMF node
@@ -62,6 +63,16 @@ Each phase is a `phase_begin` / `phase_end` pair, per node. The phases
 above the line record today; the ones below record as they are built, into
 the same NDJSON stream. That is how the 1-to-N curve gets measured without
 anyone retrofitting instrumentation.
+
+## Discovery
+
+An image that has no identity yet can boot a second image whose only job is
+to describe it. `make discover` switches a node to the `discovery` image and
+appends the `cluster-discovery` runtime overlay for one boot; the payload
+scrapes DMI, CPU, memory, NICs, disks and GPUs and writes its own NetBox
+device, interfaces and IPAM address. The NetBox endpoint and token arrive in
+the overlay at boot, never in an image or in git. See
+[`discovery.md`](discovery.md).
 
 ## The management plane
 

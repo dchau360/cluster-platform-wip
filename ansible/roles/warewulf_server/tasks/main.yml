@@ -142,6 +142,105 @@
     mode: "0644"
 
 # ---------------------------------------------------------------------------
+# Discovery image and profile (SRE-12).
+#
+# A node with no identity yet boots this image once to describe itself. See
+# scripts/discover.sh for the harness and docs/discovery.md for the design.
+# The image itself holds no credential; the NetBox endpoint and token arrive
+# at boot from the cluster-discovery runtime overlay built below.
+# ---------------------------------------------------------------------------
+
+- name: Read the imported discovery-image marker
+  become: true
+  ansible.builtin.slurp:
+    src: "{{ warewulf_server_discovery_image_state_file }}"
+  register: warewulf_server_discovery_image_state
+  failed_when: false
+
+- name: Import the discovery image when its tag has changed
+  become: true
+  when:
+    - not ansible_check_mode
+    - (warewulf_server_discovery_image_state.content is not defined)
+      or ((warewulf_server_discovery_image_state.content | b64decode | trim)
+          != warewulf_server_discovery_image_tag)
+  ansible.builtin.command:
+    cmd: >-
+      wwctl image import --build --force
+      {{ warewulf_server_discovery_image_uri }}
+      {{ warewulf_server_discovery_image_name }}
+  changed_when: true
+
+- name: Record which discovery image tag is imported
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.copy:
+    content: "{{ warewulf_server_discovery_image_tag }}\n"
+    dest: "{{ warewulf_server_discovery_image_state_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+# --- discovery runtime overlay: where NetBox is, and how to write to it -----
+
+- name: Read the NetBox runtime environment
+  become: true
+  ansible.builtin.slurp:
+    src: "{{ warewulf_server_netbox_env_file }}"
+  register: warewulf_server_netbox_env_file_contents
+  failed_when: false
+  no_log: true
+
+- name: Derive the NetBox API token for the discovery overlay
+  when: warewulf_server_netbox_env_file_contents.content is defined
+  ansible.builtin.set_fact:
+    warewulf_server_netbox_token: >-
+      nbt_{{ (warewulf_server_netbox_env_file_contents.content | b64decode
+              | regex_search('(?m)^SUPERUSER_API_KEY=(.+)$', '\1')).0
+      }}.{{ (warewulf_server_netbox_env_file_contents.content | b64decode
+             | regex_search('(?m)^SUPERUSER_API_TOKEN=(.+)$', '\1')).0 }}
+  no_log: true
+
+- name: Require a NetBox token before building the discovery overlay
+  when: warewulf_server_netbox_token is not defined
+  ansible.builtin.fail:
+    msg: >-
+      {{ warewulf_server_netbox_env_file }} is missing or has no
+      SUPERUSER_API_KEY/SUPERUSER_API_TOKEN, so the discovery overlay cannot
+      carry an API token. Bring NetBox up first (`make up`) and re-run.
+
+- name: Create the discovery overlay tree
+  become: true
+  ansible.builtin.file:
+    path: >-
+      {{ warewulf_server_overlay_dir }}/{{ warewulf_server_discovery_overlay
+         }}/rootfs/{{ warewulf_server_discovery_env_dir | regex_replace('^/', '') }}
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  notify: Rebuild overlays
+
+- name: Deliver the NetBox endpoint and token through the discovery overlay
+  become: true
+  ansible.builtin.copy:
+    dest: >-
+      {{ warewulf_server_overlay_dir }}/{{ warewulf_server_discovery_overlay
+         }}/rootfs/{{ warewulf_server_discovery_env_dir | regex_replace('^/', '')
+         }}/netbox.env
+    content: |
+      # Delivered at boot by the cluster-discovery Warewulf runtime overlay.
+      # Not in git, not in an image. Rotating it is a lab-host edit and a
+      # reboot. See docs/discovery.md.
+      NETBOX_URL={{ lab_netbox_segment_url }}
+      NETBOX_TOKEN={{ warewulf_server_netbox_token }}
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Rebuild overlays
+
+# ---------------------------------------------------------------------------
 # Cluster identity, delivered at boot and never stored in git or an image.
 # ---------------------------------------------------------------------------
 
