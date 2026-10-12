@@ -36,8 +36,18 @@ declare -A _PHASE_START=()
 
 timing_init() {
   mkdir -p "$LAB_TIMING_DIR"
-  : > "$(_timing_file)"
-  log "timing run $LAB_RUN_ID -> $(_timing_file)"
+  local file; file="$(_timing_file)"
+  # Create the run file once, and never truncate it again. A child script
+  # (`up.sh`, `day2.sh`) inherits LAB_RUN_ID from the script that started it
+  # and must append to the same run; truncating here wiped every phase the
+  # parent had recorded before the child ran. `up.sh` is called first in
+  # `demo.sh` so it only wiped the phases before itself, but the burn-in gate
+  # runs in the middle of `nodes-activate`, and its `timing_init` was
+  # deleting the initial boot phases of the very run being measured. The run
+  # id ends in the top-level pid, so a genuinely new run always gets a new
+  # file and still starts empty.
+  [[ -f "$file" ]] || : > "$file"
+  log "timing run $LAB_RUN_ID -> $file"
 }
 
 phase_begin() {
