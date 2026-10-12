@@ -130,11 +130,69 @@ phases stay flat as N grows and which do not.
 
 ## Results
 
-| Date | N | Total | Notes |
-| --- | --- | --- | --- |
-| _pending_ | | | First curve lands when the PXE and Warewulf phases record. |
+Two lab runs on 2026-10-12, the same code, `make demo N=<n>` with no change
+between them. `nodes-up` is the boot-loop wall clock from the first
+`virsh start` to the last node's login prompt; the per-phase numbers are the
+per-node durations recorded by the console watchers.
 
-The foundation task deliberately does not publish a curve. Timing three
-phases would produce a number with no meaning. The harness, the phase
-names and the output format are in place so the first real curve needs no
-new instrumentation.
+### End to end
+
+| Date | N | platform-up | converge | nodes-up | every node reached login |
+| --- | --- | --- | --- | --- | --- |
+| 2026-10-12 | 2 | 0.231s | 28.096s | 36.549s | yes |
+| 2026-10-12 | 4 | 0.226s | 29.393s | 38.579s | yes |
+
+Run ids: `20261012T050012Z-293002` (N=2), `20261012T045854Z-284173` (N=4).
+
+### Per phase, per node
+
+`make demo N=2`:
+
+| Phase | cn01 | cn02 |
+| --- | --- | --- |
+| firmware | 7.825 | 13.445 |
+| dhcp-lease | 8.147 | 13.199 |
+| ipxe | 5.950 | 5.978 |
+| kernel | 0.004 | 0.004 |
+| initramfs | 2.520 | 2.524 |
+| overlay | 6.599 | 6.604 |
+| login | 7.205 | 7.227 |
+
+`make demo N=4`:
+
+| Phase | cn01 | cn02 | cn03 | cn04 |
+| --- | --- | --- | --- | --- |
+| firmware | 14.055 | 13.778 | 13.463 | 13.476 |
+| dhcp-lease | 13.398 | 13.369 | 13.373 | 13.388 |
+| ipxe | 5.961 | 5.961 | 5.982 | 5.980 |
+| kernel | 0.003 | 0.004 | 0.004 | 0.003 |
+| initramfs | 2.533 | 2.534 | 2.536 | 2.537 |
+| overlay | 7.962 | 7.954 | 7.953 | 7.954 |
+| login | 7.215 | 7.218 | 6.597 | 7.228 |
+
+`node-define` is 0.083-0.089s and `node-start` 0.180-0.212s per node at both
+counts; they are not repeated above.
+
+### What the curve says
+
+The per-run phases (`preflight`, `systemd-install`, `net`, `services`,
+`platform-up`, `converge`) are flat in N, which is the check that no per-node
+work leaked into a per-run step. `converge` is the largest fixed cost, about
+28-29s, and it does not move with N.
+
+The per-node phases split in two. `ipxe`, `kernel`, `initramfs`, `overlay`
+and `login` are flat to within a few milliseconds at both counts: once a node
+has its kernel and initramfs, boot is independent of how many neighbours are
+doing the same thing.
+
+The contended phases are `firmware` and `dhcp-lease`. At N=2 the first node
+to be served finishes `firmware` in 7.8s while the second takes 13.4s; at N=4
+all four take 13.5-14.1s. One dnsmasq answers every DHCP request, and the
+first node's negotiation is serialized behind the others. The effect is a
+step, not a slope: 7.8s to ~13.5s between N=2 and N=4, then flat across the
+nodes within each run.
+
+`nodes-up` itself grows from 36.5s to 38.6s for double the nodes, because the
+boot phases run in parallel. The 1-to-N cost is in the contended hand-off,
+not in the boot.
+

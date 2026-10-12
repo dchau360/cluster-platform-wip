@@ -103,3 +103,72 @@ What must not change is the name:
 
 That is the design the seed states and this drill checks: host identity is
 rack position; a MAC is a locator that can be replaced.
+
+## Measured results
+
+All four drills ran on the lab host on 2026-10-12 against
+`cluster-platform-wip` at the merge that added them.
+
+### #6 rollback
+
+```
+$ make rollback TAG=sha-1bb6b9f6f98e
+...
+server imported marker : sha-1bb6b9f6f98e
+node cn01 reports : docker://ghcr.io/dchau360/cluster-images-wip/compute-slurm:sha-1bb6b9f6f98e
+ROLLBACK OK — cn01 reports the rolled-back tag sha-1bb6b9f6f98e
+```
+
+The marker before the command was `latest`. The run took 56s, of which 28.8s
+was the converge (image import) and 27.5s the reboot and boot.
+
+### #8 N=2 and N=4
+
+```
+$ make demo N=2     # nodes-up 36.549s, both nodes reached login
+$ make demo N=4     # nodes-up 38.579s, all four nodes reached login
+```
+
+The per-phase tables and the curve are in
+[`measurements.md`](measurements.md#results).
+
+### #7 one node re-provisions alone
+
+```
+$ make drill-reprovision NODE=1
+after
+cn02 state=running domid=20 cpu_ns=30612511000 console_bytes=10019 lease=1
+ok   cn02: state=running domid 20->20 cpu_ns 29572300000->30612511000 lease=1
+RE-PROVISION OK — cn01 was rebuilt from bare metal; every neighbour stayed up
+```
+
+`cn01` is the control: its disk was removed, so its domain id and CPU time
+both reset. `cn02`'s domain id is unchanged and its CPU time grew across the
+window, so it was running the whole time.
+
+### #3 identity survives a NIC swap
+
+```
+$ make drill-nic-swap
+pre-swap identity for cn01 (index 1)
+domain MAC          : 52:54:00:00:00:01
+warewulf hwaddr     : 52:54:00:00:00:01
+netbox device       : rack-a-u01 (position 1.0, id 1)
+netbox interface MAC: 02:00:00:42:00:01
+swap: 52:54:00:00:00:01 -> 52:54:00:00:ff:01, re-register the same identity
+post-swap identity
+domain MAC          : 52:54:00:00:ff:01
+netbox device       : rack-a-u01 (position 1.0)
+netbox interface MAC: 52:54:00:00:FF:01
+console             : cn01 login:
+dhcp lease hostname : cn01
+PASS the MAC changed: 52:54:00:00:ff:01
+PASS NetBox recorded the new MAC: 52:54:00:00:ff:01
+PASS the NetBox device kept its name: rack-a-u01
+PASS the hostname did not change: cn01
+PASS the node still booted as itself: cn01 login:
+NIC SWAP OK
+```
+
+The MAC moved through Warewulf, NetBox and the dnsmasq reservations, and the
+node rebooted. Its name did not move.
