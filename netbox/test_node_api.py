@@ -148,6 +148,15 @@ class BurninValidationTest(unittest.TestCase):
         self.assertNotIn("passed", fields["burnin_results"]["checks"]["cpu"])
         self.assertEqual(fields["burnin_results"]["checks"]["cpu"]["bogo_ops_per_second"], 812.5)
 
+    def test_templated_numbers_are_stored_as_numbers(self):
+        body = {**self.BODY, "checks": {"cpu": {"bogo_ops_per_second": "812.5", "exit_code": "0"},
+                                        "memory": {"exit_code": "-1"},
+                                        "disk": {"device": "vda", "write_mib_per_second": "0.0"}}}
+        checks = api.validate_burnin(body)["burnin_results"]["checks"]
+        self.assertEqual(checks["cpu"], {"bogo_ops_per_second": 812.5, "exit_code": 0})
+        self.assertEqual(checks["memory"]["exit_code"], -1)
+        self.assertEqual(checks["disk"], {"device": "vda", "write_mib_per_second": 0.0})
+
     def test_every_check_must_be_present(self):
         body = {**self.BODY, "checks": {"cpu": {}}}
         with self.assertRaises(api.BadRequest):

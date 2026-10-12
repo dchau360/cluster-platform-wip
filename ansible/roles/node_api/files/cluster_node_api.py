@@ -242,6 +242,9 @@ def validate_convergence(body) -> dict:
 
 
 _BURNIN_CHECKS = ("cpu", "memory", "disk")
+# Ansible's default templating renders every scalar it substitutes as a
+# string, so a measurement arrives as "812.5". Store the number.
+_NUMBER = re.compile(r"^-?\d{1,15}(?:\.\d{1,15})?$")
 
 
 def validate_burnin(body) -> dict:
@@ -271,6 +274,9 @@ def validate_burnin(body) -> dict:
                 kept[key] = value
             elif isinstance(value, (int, float)):
                 kept[key] = value
+            elif isinstance(value, str) and _NUMBER.match(value.strip()):
+                number = float(value)
+                kept[key] = int(number) if number.is_integer() and "." not in value else number
             elif isinstance(value, str) and len(value) <= 256:
                 kept[key] = value
             else:
