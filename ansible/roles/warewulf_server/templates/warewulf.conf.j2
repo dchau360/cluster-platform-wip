@@ -16,9 +16,6 @@ warewulf:
     systemd name: warewulfd
 api:
     enabled: false
-    allowed subnets:
-        - 127.0.0.0/8
-        - ::1/128
 dhcp:
     enabled: {{ warewulf_server_manage_dhcp | bool | lower }}
 tftp:
