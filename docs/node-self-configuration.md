@@ -195,7 +195,7 @@ issue thread.
 |-------|--------|
 | Self-configuration, no inbound SSH | `root@<node>:22` refused; the serial log shows `cluster-pull` cloning `deployed` from the head mirror, fetching facts from the node API, installing the overlay Munge key |
 | Idempotence | second pull run on each node `ok=38 changed=0 failed=0`; head converge `ok=119 changed=0` |
-| Slurm | `sinfo`: cn01, cn02 `idle`; `sbatch -N2 -n4` ran ranks 0-1 on cn01 and 2-3 on cn02 |
+| Slurm | `sinfo`: both nodes `idle`; `sbatch -N2 -n4` ran two ranks on each node |
 | Burn-in gate | cn02's disk throttled to 4 MiB/s from the hypervisor: gate set it `failed` (`disk write_mib_per_second 4.0 < 20.0`) and cn01 `active`; throttle removed, cn02 re-staged, re-burned at 1299.5 MiB/s, gate set it `active` |
 | slurmctld down at node start | pull run succeeded; `slurmd` retried the config fetch for ~2 min and registered 10 s after slurmctld started |
 | Mirror unreachable | run reported `failed` (`fetch deployed from mirror (exit 2)`), checkout and services untouched, node stayed `idle`; `convergence-status` exits non-zero |
