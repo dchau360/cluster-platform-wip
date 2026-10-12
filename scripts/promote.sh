@@ -20,6 +20,8 @@ export LAB_SCRIPT_NAME=promote
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "$HERE/lib/common.sh"
+lab_load_env
+counters_init
 
 REF="${DEPLOYED_REF:-deployed}"
 REQUIRED_CHECK="${PROMOTE_REQUIRED_CHECK:-pull check-mode}"
