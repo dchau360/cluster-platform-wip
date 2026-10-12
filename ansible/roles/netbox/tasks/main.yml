@@ -88,14 +88,32 @@
     enabled: true
     state: started
     daemon_reload: true
-- name: Wait for the NetBox API
-  ansible.builtin.uri:
-    url: http://127.0.0.1:8000/api/
-    status_code: 200
-  register: netbox_api_health
-  until: netbox_api_health.status == 200
-  retries: 60
-  delay: 5
+- name: Check for a local NetBox superuser password
+  become: true
+  ansible.builtin.command:
+    cmd: grep -q '^SUPERUSER_PASSWORD=' /etc/cluster-lab/netbox.env
+  register: netbox_superuser_password_line
+  changed_when: false
+  failed_when: false
+  no_log: true
+- name: Generate a local NetBox superuser password
+  become: true
+  when: netbox_superuser_password_line.rc != 0
+  ansible.builtin.command: openssl rand -hex 32
+  register: netbox_superuser_password
+  changed_when: true
+  no_log: true
+- name: Add the local NetBox superuser password once
+  become: true
+  when: netbox_superuser_password_line.rc != 0
+  ansible.builtin.lineinfile:
+    path: /etc/cluster-lab/netbox.env
+    line: "SUPERUSER_PASSWORD={{ netbox_superuser_password.stdout }}"
+    mode: "0600"
+  notify: Restart NetBox
+  no_log: true
+- name: Apply NetBox environment changes before API use
+  ansible.builtin.meta: flush_handlers
 - name: Read the local NetBox environment
   become: true
   ansible.builtin.slurp:
@@ -107,6 +125,17 @@
     netbox_runtime_token: >-
       {{ (netbox_environment_file.content | b64decode
           | regex_search('(?m)^SUPERUSER_API_TOKEN=(.+)$', '\1')).0 }}
+  no_log: true
+- name: Wait for the authenticated NetBox API
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8000/api/
+    headers:
+      Authorization: "Token {{ netbox_runtime_token }}"
+    status_code: 200
+  register: netbox_api_health
+  until: netbox_api_health.status == 200
+  retries: 60
+  delay: 5
   no_log: true
 - name: Install the repository NetBox definition and seeder
   become: true
