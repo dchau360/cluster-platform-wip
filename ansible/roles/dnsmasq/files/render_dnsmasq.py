@@ -17,6 +17,7 @@ docs/ib-and-dhcp-option61.md.
 unit-tested on a machine that has no NetBox client installed.
 """
 import os
+import stat
 import tempfile
 from pathlib import Path
 
@@ -97,6 +98,22 @@ def netbox_entries(nb):
     return entries
 
 
+def write_output(target, lines):
+    """Atomically install a dnsmasq-readable reservation file."""
+    content = "".join(lines)
+    if target.exists() and target.read_text() == content:
+        if stat.S_IMODE(target.stat().st_mode) == 0o644:
+            return False
+        target.chmod(0o644)
+        return True
+    with tempfile.NamedTemporaryFile("w", dir=target.parent, delete=False) as out:
+        out.writelines(lines)
+        temporary = Path(out.name)
+    temporary.chmod(0o644)
+    temporary.replace(target)
+    return True
+
+
 def main():
     import pynetbox  # imported here so the renderer can be tested alone
 
@@ -110,14 +127,7 @@ def main():
     # Say whether anything changed, so the role restarts dnsmasq exactly when
     # the reservations moved. A renderer that always reported "unchanged"
     # left dnsmasq serving stale reservations until something else restarted it.
-    if target.exists() and target.read_text() == "".join(lines):
-        print("unchanged")
-        return
-    with tempfile.NamedTemporaryFile("w", dir=target.parent, delete=False) as out:
-        out.writelines(lines)
-        temporary = out.name
-    Path(temporary).replace(target)
-    print("changed")
+    print("changed" if write_output(target, lines) else "unchanged")
 
 
 if __name__ == "__main__":  # pragma: no cover

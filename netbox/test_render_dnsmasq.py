@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -75,6 +76,16 @@ class RenderEntriesTest(unittest.TestCase):
                  "mac": "52:54:00:00:00:01", "ib_guid": PORT_GUID}
         self.assertEqual(render_dnsmasq.render_entries([entry, entry]),
                          render_dnsmasq.render_entries([entry]))
+
+    def test_output_is_readable_by_unprivileged_dnsmasq(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "netbox-hosts.conf"
+            self.assertTrue(render_dnsmasq.write_output(target, ["entry\n"]))
+            self.assertEqual(target.stat().st_mode & 0o777, 0o644)
+            target.chmod(0o600)
+            self.assertTrue(render_dnsmasq.write_output(target, ["entry\n"]))
+            self.assertEqual(target.stat().st_mode & 0o777, 0o644)
+            self.assertFalse(render_dnsmasq.write_output(target, ["entry\n"]))
 
 
 class EntryHostnameTest(unittest.TestCase):
