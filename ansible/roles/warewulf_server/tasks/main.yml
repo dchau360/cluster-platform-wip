@@ -487,6 +487,37 @@
       --tagadd image_reference={{ warewulf_server_image_uri }}
   changed_when: false
 
+# NetBox is the source of truth for a node's address: the DNS name on its
+# provisioning address is its hostname, so the address is looked up by name.
+# The offset formula is only the fallback for a node NetBox does not know yet.
+# Warewulf, dnsmasq and the node API then all agree on one address per node.
+- name: Read node addresses from NetBox
+  when: netbox_runtime_token is defined
+  ansible.builtin.uri:
+    url: >-
+      http://127.0.0.1:8000/api/ipam/ip-addresses/?dns_name={{ lab_node_name_prefix
+      }}{{ '%02d' | format(item) }}.{{ lab_prov_domain }}
+    headers:
+      Authorization: "Token {{ netbox_runtime_token }}"
+  loop: "{{ range(1, (lab_node_count | int) + 1) | list }}"
+  loop_control:
+    label: "{{ lab_node_name_prefix }}{{ '%02d' | format(item) }}"
+  register: warewulf_server_netbox_addresses
+  check_mode: false
+  no_log: true
+
+- name: Settle each node's address
+  ansible.builtin.set_fact:
+    warewulf_server_node_addresses: >-
+      {{ warewulf_server_node_addresses | default({})
+         | combine({(lab_node_name_prefix ~ ('%02d' | format(item.item))):
+                    ((item.json.results | default([]) | map(attribute='address') | first | default(''))
+                      | regex_replace('/.*$', ''))
+                    or (warewulf_server_node_ip_prefix ~ '.' ~ ((warewulf_server_node_ip_offset | int) + item.item))}) }}
+  loop: "{{ warewulf_server_netbox_addresses.results | default([]) }}"
+  loop_control:
+    label: "{{ lab_node_name_prefix }}{{ '%02d' | format(item.item) }}"
+
 - name: Define every node from the node count
   become: true
   when:
@@ -496,7 +527,8 @@
   ansible.builtin.command:
     cmd: >-
       wwctl node add {{ lab_node_name_prefix }}{{ '%02d' | format(item) }}
-      --ipaddr {{ warewulf_server_node_ip_prefix }}.{{ (warewulf_server_node_ip_offset | int) + item }}
+      --ipaddr {{ (warewulf_server_node_addresses | default({}))[lab_node_name_prefix ~ ('%02d' | format(item))]
+                  | default(warewulf_server_node_ip_prefix ~ '.' ~ ((warewulf_server_node_ip_offset | int) + item)) }}
       --netdev {{ warewulf_server_node_netdev }}
       --hwaddr {{ warewulf_server_mac_oui }}:00:{{ '%02x' | format(item // 256) }}:{{ '%02x' | format(item % 256) }}
   loop: "{{ range(1, (lab_node_count | int) + 1) | list }}"
@@ -504,3 +536,26 @@
     label: "{{ lab_node_name_prefix }}{{ '%02d' | format(item) }}"
   register: warewulf_server_node_add
   changed_when: warewulf_server_node_add.rc == 0
+
+- name: Reconcile an existing node's address with NetBox
+  become: true
+  vars:
+    warewulf_server_node: "{{ lab_node_name_prefix }}{{ '%02d' | format(item) }}"
+    warewulf_server_current: >-
+      {{ ((warewulf_server_existing_nodes | default({}))[warewulf_server_node]
+          | default({})).get('network devices', {}).get(warewulf_server_node_netname, {}).get('ipaddr', '') }}
+  when:
+    - not ansible_check_mode
+    - warewulf_server_node in (warewulf_server_existing_nodes | default({}))
+    - warewulf_server_node in (warewulf_server_node_addresses | default({}))
+    - warewulf_server_current != warewulf_server_node_addresses[warewulf_server_node]
+  ansible.builtin.command:
+    cmd: >-
+      wwctl node set --yes {{ warewulf_server_node }}
+      --netname {{ warewulf_server_node_netname }}
+      --ipaddr {{ warewulf_server_node_addresses[warewulf_server_node] }}
+  loop: "{{ range(1, (lab_node_count | int) + 1) | list }}"
+  loop_control:
+    label: "{{ lab_node_name_prefix }}{{ '%02d' | format(item) }}"
+  changed_when: true
+  notify: Rebuild overlays

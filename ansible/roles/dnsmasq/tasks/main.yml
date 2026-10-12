@@ -34,7 +34,8 @@
   environment:
     NETBOX_TOKEN: "{{ netbox_runtime_token }}"
     NETBOX_URL: http://127.0.0.1:8000
-  changed_when: false
+  register: dnsmasq_render
+  changed_when: dnsmasq_render.stdout | trim == 'changed'
   notify: Restart dnsmasq
 - name: Point provisioning dnsmasq at NetBox reservations
   become: true

@@ -90,10 +90,17 @@ def main():
         "DNSMASQ_NETBOX_OUTPUT",
         "/var/lib/cluster-lab/dnsmasq/netbox-hosts.conf"))
     target.parent.mkdir(parents=True, exist_ok=True)
+    # Say whether anything changed, so the role restarts dnsmasq exactly when
+    # the reservations moved. A renderer that always reported "unchanged"
+    # left dnsmasq serving stale reservations until something else restarted it.
+    if target.exists() and target.read_text() == "".join(lines):
+        print("unchanged")
+        return
     with tempfile.NamedTemporaryFile("w", dir=target.parent, delete=False) as out:
         out.writelines(lines)
         temporary = out.name
     Path(temporary).replace(target)
+    print("changed")
 
 
 if __name__ == "__main__":  # pragma: no cover
