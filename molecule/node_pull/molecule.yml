@@ -1,7 +1,8 @@
 ---
 # local.yml in the node image itself, under systemd, run by the node's own
 # ansible-core the way ansible-pull runs it. Molecule's idempotence step
-# requires the second run to report changed=0.
+# requires the second run to report changed=0. COMPUTE_IMAGE is the pinned
+# node image; CI sets it in .github/workflows/ci.yml.
 dependency:
   name: galaxy
   enabled: false
@@ -10,7 +11,7 @@ driver:
 platforms:
   - name: cn01
     hostname: cn01
-    image: "${COMPUTE_IMAGE:?set COMPUTE_IMAGE to the pinned node image}"
+    image: "${COMPUTE_IMAGE}"
     pre_build_image: true
     privileged: true
     cgroupns_mode: host
