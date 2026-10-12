@@ -69,9 +69,11 @@ def main():
         description = f"{name} allocation pool"
         changes += ensure(nb.ipam.ip_ranges, {"description": description}, {"start_address": start, "end_address": end, "status": "active", "description": description, "mark_utilized": False})
     for field in definition["custom_fields"]:
-        # Device convergence fields are declared as text for broad NetBox-version
-        # compatibility; writers retain the typed semantics in their values.
-        values = {"name": field["name"], "label": field["name"].replace("_", " ").title(), "type": "text", "object_types": ["dcim.device"], "required": False}
+        # Fields are declared as text for broad NetBox-version compatibility;
+        # writers retain the typed semantics in their values. `object_types`
+        # defaults to the device, because that is where convergence lands;
+        # a field that belongs on an interface (the IB GUID) says so.
+        values = {"name": field["name"], "label": field["name"].replace("_", " ").title(), "type": "text", "object_types": field.get("object_types", ["dcim.device"]), "required": False}
         changes += ensure(nb.extras.custom_fields, {"name": field["name"]}, values)
     rack = nb.dcim.racks.get(name=definition["racks"][0]["name"], site_id=site_obj.id)
     role_obj = nb.dcim.device_roles.get(slug=role["slug"])

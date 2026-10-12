@@ -154,3 +154,16 @@ jobs:
           git ls-files '*.sh' | while read -r f; do bash -n "$f"; echo "ok $f"; done
       - name: Node count is a variable, never a constant
         run: ./scripts/check-node-count-is-variable.sh
+
+  python-tests:
+    name: python tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      # Pure-function tests: the InfiniBand GUID conversion is exercised
+      # against synthetic sysfs fixtures and GUIDs, because the lab has no
+      # IB hardware. No third-party dependency, so nothing to install.
+      - run: python3 -m unittest discover -s netbox -p 'test_*.py' -v

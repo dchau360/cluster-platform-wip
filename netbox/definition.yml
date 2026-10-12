@@ -30,3 +30,8 @@ custom_fields:
   - {name: image_tag, type: text}
   - {name: convergence_result, type: selection, choices: [success, failed]}
   - {name: convergence_duration_seconds, type: decimal}
+  # The port GUID a node's InfiniBand interface reports. It carries the
+  # option-61 reservation for a node that identifies itself by GUID rather
+  # than by MAC. Written against synthetic GUID data only: this lab has no
+  # InfiniBand hardware. See docs/ib-and-dhcp-option61.md.
+  - {name: ib_guid, type: text, object_types: [dcim.interface]}

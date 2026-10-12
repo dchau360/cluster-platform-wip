@@ -8,6 +8,14 @@
     src: render_dnsmasq.py
     dest: /usr/local/sbin/render-netbox-dnsmasq
     mode: "0755"
+- name: Install the InfiniBand GUID helper next to the renderer
+  become: true
+  ansible.builtin.copy:
+    # Kept in netbox/ rather than duplicated into this role's files/, so the
+    # unit tests and the deployed renderer run the same module.
+    src: "{{ playbook_dir }}/../netbox/ib_guid.py"
+    dest: /usr/local/sbin/ib_guid.py
+    mode: "0644"
 - name: Create dnsmasq and TFTP state directories
   become: true
   ansible.builtin.file:

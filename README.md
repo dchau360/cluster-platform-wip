@@ -26,28 +26,37 @@ make down                                # stop the lab
 
 ## What is here today
 
-The foundation, and nothing above it. The floor is finished so the rest of
-the work has somewhere to land.
+The boot chain works end to end on the lab: a q35/OVMF node PXE-boots,
+Warewulf serves it a node image imported from a public GHCR package with no
+credential anywhere, and the node reaches a login prompt with its identity
+(Munge key, SSH host keys) delivered by overlay. The measured 1-to-N curve
+is in [`docs/measurements.md`](docs/measurements.md).
 
 | Working now | Where |
 | --- | --- |
 | Isolated provisioning bridge, no route to the home LAN | `scripts/net-up.sh` |
-| dnsmasq bound to that bridge only, DHCP + TFTP | `scripts/net-up.sh` |
-| UEFI/OVMF nodes on the segment, created and destroyed by the harness | `scripts/nodes-up.sh` |
-| `make up` / `make down` / `make demo N=<n>`, idempotent | `Makefile` |
+| dnsmasq bound to that bridge only: DHCP, TFTP, the Warewulf PXE chain | `scripts/net-up.sh` |
+| UEFI/OVMF nodes, created, re-provisioned and destroyed by the harness | `scripts/nodes-up.sh` |
+| Warewulf image import from GHCR, node/profile definitions, identity overlays | `ansible/roles/warewulf_server/` |
+| NetBox as source of truth; dnsmasq reservations rendered from it | `ansible/roles/netbox/`, `ansible/roles/dnsmasq/` |
+| Discovery boot that registers itself in NetBox and claims its IPAM address | `scripts/discover.sh`, `cluster-images-wip` |
+| Redfish power and boot order via `sushy-emulator` | `ansible/roles/sushy_emulator/`, `scripts/redfish.sh` |
+| One-command rollback, `N=2`/`N=4`, re-provision and NIC-swap drills | `Makefile`, `docs/acceptance-drills.md` |
 | Per-phase, per-node timing, NDJSON plus CSV | `scripts/lib/timing.sh` |
 | Every lab service a systemd unit enabled at boot | `systemd/` |
-| Repo hygiene gates, green before any content existed | `.github/workflows/ci.yml` |
 
-Stubbed, owned by later tasks:
+## What has never been touched
 
-| Next | Where it lands |
-| --- | --- |
-| GRUB/kernel handoff over TFTP | `scripts/`, `ansible/roles/pxe/` |
-| Warewulf server, node profiles, per-node overlays | `ansible/roles/warewulf/` |
-| NetBox as source of truth, inventory generated from it | `ansible/roles/netbox/` |
-| Slurm controller and compute roles, Munge from overlay | `ansible/roles/slurm/` |
-| The measured 1-to-N curve | `docs/measurements.md` |
+Two gaps are disclosed on purpose, because a gap that is found is a
+credibility failure and a gap that is written down is a design decision:
+
+- **InfiniBand.** This lab has no IB hardware, and never has. The GUID
+discovery and the DHCP option-61 client-id reservations are real code,
+exercised only against synthetic GUID data. See
+[`docs/ib-and-dhcp-option61.md`](docs/ib-and-dhcp-option61.md).
+- **Vendor BIOS attributes.** `sushy-emulator` gives real power control and
+real boot-order changes, but its Redfish `BIOS` resource is a fixed synthetic
+set, not firmware. See [`docs/redfish.md`](docs/redfish.md).
 
 ## Structure
 
