@@ -38,26 +38,20 @@
     get_checksum: false
   register: slurm_controller_munge_key
 
+# Wall clock, not ActiveEnterTimestampMonotonic: under WSL the monotonic
+# clock and /proc/uptime drift apart by hours.
 - name: Read when munged started
   when: not ansible_check_mode
   ansible.builtin.command:
-    argv: [systemctl, show, munge, --property=ActiveEnterTimestampMonotonic, --value]
+    argv: [systemctl, show, munge, --property=ActiveEnterTimestamp, --value, --timestamp=unix]
   register: slurm_controller_munged_started
-  changed_when: false
-
-- name: Read the monotonic clock's offset from the epoch
-  when: not ansible_check_mode
-  ansible.builtin.shell:
-    cmd: echo $(( $(date +%s) - $(cut -d. -f1 /proc/uptime) ))
-  register: slurm_controller_boot_epoch
   changed_when: false
 
 - name: Restart a munged that still holds an older key
   become: true
   when:
     - not ansible_check_mode
-    - (slurm_controller_boot_epoch.stdout | int)
-      + ((slurm_controller_munged_started.stdout | int) // 1000000)
+    - (slurm_controller_munged_started.stdout | trim | regex_replace('^@', '') | int)
       < (slurm_controller_munge_key.stat.mtime | int)
   ansible.builtin.systemd_service:
     name: munge
