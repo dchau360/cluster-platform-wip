@@ -44,9 +44,13 @@ if [[ "$sha" == "$previous" ]]; then
   exit 0
 fi
 
-# Every check run on this exact commit, from GitHub.
+# The latest run of each check on this exact commit, from GitHub. A commit
+# pushed to several branches has several runs per check; an older cancelled
+# one must not veto a newer green one, nor an older green one pass a newer red.
 runs="$(gh api --paginate "repos/$repo/commits/$sha/check-runs?per_page=100" \
-          --jq '.check_runs[] | [.name, .status, (.conclusion // "none")] | @tsv')"
+          --jq '.check_runs[] | [.name, (.started_at // ""), .status, (.conclusion // "none")] | @tsv' \
+        | sort -t $'\t' -k1,1 -k2,2r \
+        | awk -F'\t' -v OFS='\t' '!seen[$1]++ {print $1, $3, $4}')"
 [[ -n "$runs" ]] || die "CI has not run on ${sha:0:12}. Push it to a branch and wait for CI."
 
 printf '%s\n' "$runs" | awk -F'\t' '{printf "  %-24s %-11s %s\n", $1, $2, $3}'

@@ -11,8 +11,11 @@
 name: ci
 
 on:
+  # Not on `deployed`: a commit reaches it only after CI passed on that exact
+  # commit, and a second run there adds nothing but a chance to be cancelled
+  # by the next promotion, which would leave a red check on a green commit.
   push:
-    branches: ["**"]
+    branches: ["**", "!deployed"]
   pull_request:
   workflow_dispatch:
 
