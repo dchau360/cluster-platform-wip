@@ -27,12 +27,22 @@
       {{ node_facts.interfaces
          | selectattr('addresses', 'contains', node_facts.address)
          | first | default({}) }}
+    # The local NIC that holds the provisioning address, whatever NetBox
+    # calls it. No keyfile is ever rendered for this MAC: it is the link this
+    # play was pulled over. (Discovery can record the same NIC a second time
+    # under its kernel name; that record must not become a second profile.)
+    network_from_netbox_provisioning_mac: >-
+      {{ ansible_interfaces | map('regex_replace', '-', '_')
+         | map('extract', ansible_facts)
+         | selectattr('ipv4', 'defined')
+         | selectattr('ipv4.address', 'equalto', node_facts.address.split('/')[0])
+         | map(attribute='macaddress') | map('lower') | first | default('') }}
 
 - name: Assert the live provisioning address is the NetBox address
   ansible.builtin.assert:
     that:
       - network_from_netbox_provisioning | length > 0
-      - node_facts.address.split('/')[0] in ansible_all_ipv4_addresses
+      - network_from_netbox_provisioning_mac | length > 0
     fail_msg: >-
       NetBox says this node is {{ node_facts.address }}; the node holds
       {{ ansible_all_ipv4_addresses | join(', ') }}. Drift between Warewulf
@@ -50,6 +60,7 @@
     {{ node_facts.interfaces
        | rejectattr('name', 'equalto', network_from_netbox_provisioning.name)
        | selectattr('mac', 'truthy')
+       | rejectattr('mac', 'equalto', network_from_netbox_provisioning_mac)
        | selectattr('addresses')
        | selectattr('mac', 'in', (network_from_netbox_local | default({})).keys() | list)
        | list }}
