@@ -31,7 +31,7 @@ fi
 sudo -n true 2>/dev/null || die "passwordless sudo is required"
 ok "passwordless sudo"
 
-LAB_OWNER="${LAB_WSL_USER:-$USER}"
+LAB_OWNER="${LAB_WSL_USER:-${USER:-$(id -un)}}"
 ensure_dir "$LAB_STATE_DIR"            0755
 ensure_dir "$LAB_TFTP_DIR"             0755
 ensure_dir "$LAB_RUN_DIR"              0755 "$LAB_OWNER"

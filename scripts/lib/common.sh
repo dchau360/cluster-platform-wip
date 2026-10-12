@@ -87,7 +87,7 @@ lab_load_env() {
 # creates them, below the change-accounting layer on purpose: it reports
 # nothing, and preflight still accounts for them afterwards.
 lab_bootstrap_state() {
-  local owner="${LAB_WSL_USER:-$USER}" d
+  local owner="${LAB_WSL_USER:-${USER:-$(id -un)}}" d
   for d in "$LAB_STATE_DIR" "$LAB_RUN_DIR" "$LAB_TIMING_DIR"; do
     [[ -d "$d" ]] || sudo mkdir -p "$d"
   done

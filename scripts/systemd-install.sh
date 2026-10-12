@@ -28,7 +28,7 @@ for tpl in "$TEMPLATE_DIR"/*.in; do
   sed -e "s#@REPO_ROOT@#$REPO_ROOT#g" \
       -e "s#@LAB_STATE_DIR@#$LAB_STATE_DIR#g" \
       -e "s#@LAB_RUN_DIR@#$LAB_RUN_DIR#g" \
-      -e "s#@LAB_USER@#${LAB_WSL_USER:-$USER}#g" \
+      -e "s#@LAB_USER@#${LAB_WSL_USER:-${USER:-$(id -un)}}#g" \
       "$tpl" | ensure_file_content "$UNIT_DIR/$unit" 0644
   [[ "$(counters_changed)" == "$before" ]] || reloaded=1
 done

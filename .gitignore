@@ -84,3 +84,17 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# ---------------------------------------------------------------------------
+# Must be tracked. Keep this LAST.
+# ---------------------------------------------------------------------------
+#
+# lab/host-specific.vars holds variable NAMES only, never values, and it is
+# the list the hygiene gate trusts to decide what counts as a host value.
+#
+# This negation lives at the end of the file on purpose. .gitignore is
+# last-match-wins, so a negation placed above a broad glob loses to it — the
+# `*.vars` rule in the lab-state section swallowed this file when the negation
+# sat at the top, and the gate's "manifest is present but untracked" check is
+# what caught it. At the end, no later rule can override it.
+!lab/host-specific.vars

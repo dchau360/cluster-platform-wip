@@ -62,11 +62,14 @@ echo "== check 2: no lab state is tracked"
 # Lab state lives under LAB_STATE_DIR, outside the repo. A disk image or a
 # TFTP tree in git is both a large file forever and a disclosure risk: a
 # node image carries whatever was baked into it.
+#
+# `*.fd` covers the OVMF nvram files (OVMF_VARS_4M.fd) as well; a separate
+# `*_VARS.fd` arm is unreachable, and shellcheck says so (SC2222).
 before=$findings
 for f in "${TRACKED[@]}"; do
   case "$f" in
     *.qcow2|*.img|*.iso|*.squashfs|*.raw|*.vmdk|*.vhdx|\
-    *.fd|*_VARS.fd|*.nvram|\
+    *.fd|*.nvram|\
     *.retry|\
     *.tar|*.tar.gz|*.tar.zst|*.cpio|*.cpio.gz|\
     vmlinuz*|initramfs*|initrd*|\
