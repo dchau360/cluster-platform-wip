@@ -12,6 +12,8 @@ import yaml
 
 def normalize(value):
     """Normalize pynetbox's display objects and decimalized API numbers."""
+    if hasattr(value, "value"):
+        value = value.value
     if isinstance(value, bool) or value is None:
         return value
     text = str(value).lower()
