@@ -11,8 +11,9 @@
 
 - name: Assemble the convergence record
   vars:
+    # An env lookup is unsafe text; it is cast at the point of arithmetic.
     convergence_report_started: >-
-      {{ (lookup('env', 'CLUSTER_PULL_STARTED') | default(cluster_play_started, true)) | float }}
+      {{ lookup('env', 'CLUSTER_PULL_STARTED') | default(cluster_play_started, true) }}
   ansible.builtin.set_fact:
     convergence_report_body:
       result: "{{ convergence_report_result }}"
@@ -20,7 +21,8 @@
         {{ convergence_report_sha.stdout | trim
            if (convergence_report_sha.rc | default(1)) == 0 else 'unknown' }}
       image_tag: "{{ cluster_image_tag }}"
-      duration_seconds: "{{ ((now(utc=true).timestamp() | float) - convergence_report_started) | round(3) }}"
+      duration_seconds: >-
+        {{ ((now(utc=true).timestamp() | float) - (convergence_report_started | float)) | round(3) }}
       finished_at: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}"
       run_id: "{{ convergence_report_run_id }}"
       failed_task: "{{ convergence_report_failed_task | truncate(200, true, '') }}"
