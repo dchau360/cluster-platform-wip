@@ -94,6 +94,23 @@ class EntryHostnameTest(unittest.TestCase):
         device = self._Obj(name="rack-a-u01")
         self.assertEqual(render_dnsmasq.entry_hostname(address, device), "rack-a-u01")
 
+    def test_named_provisioning_address_wins_over_discovery_lease(self):
+        temporary = self._Obj(address="10.42.0.135/24", dns_name="")
+        canonical = self._Obj(address="10.42.0.20/24", dns_name="cn01.lab.internal")
+        self.assertIs(
+            render_dnsmasq.reservation_address(
+                [temporary, canonical], "provisioning"),
+            canonical,
+        )
+
+    def test_other_interfaces_keep_their_first_address(self):
+        first = self._Obj(address="10.43.0.20/24", dns_name="")
+        second = self._Obj(address="10.43.0.120/24", dns_name="cn01-ib")
+        self.assertIs(
+            render_dnsmasq.reservation_address([first, second], "ib0"),
+            first,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

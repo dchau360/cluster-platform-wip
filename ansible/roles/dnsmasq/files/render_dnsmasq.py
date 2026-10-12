@@ -58,6 +58,22 @@ def entry_hostname(address, device):
     return getattr(device, "name", None)
 
 
+def reservation_address(addresses, interface_name):
+    """Choose the authoritative address when discovery left an old lease.
+
+    The provisioning address with a DNS name is the node identity seeded by
+    the platform. Discovery can also leave a second, unnamed DHCP address on
+    the interface; pynetbox does not promise result ordering, so blindly using
+    the first address can perpetuate that temporary lease forever.
+    """
+    if interface_name == "provisioning":
+        named = [address for address in addresses
+                 if (getattr(address, "dns_name", None) or "").strip()]
+        if named:
+            return named[0]
+    return addresses[0]
+
+
 def netbox_entries(nb):
     """Every addressed interface, as a reservation entry."""
     entries = []
@@ -65,11 +81,12 @@ def netbox_entries(nb):
         addresses = list(nb.ipam.ip_addresses.filter(interface_id=interface.id))
         if not addresses:
             continue
-        ip = str(addresses[0].address).split("/")[0]
+        address = reservation_address(addresses, interface.name)
+        ip = str(address.address).split("/")[0]
         device = getattr(interface, "device", None)
         custom = getattr(interface, "custom_fields", None) or {}
         entries.append({
-            "hostname": entry_hostname(addresses[0], device),
+            "hostname": entry_hostname(address, device),
             "ip": ip,
             # Only the provisioning interface keys on MAC. An IB interface
             # may report no 6-byte MAC at all, and a second MAC-keyed
