@@ -1,7 +1,7 @@
 ---
 - name: Check the overlay delivered the cluster Munge key
   ansible.builtin.stat:
-    path: "{{ munge_key_source }}"
+    path: "{{ munge_key_sorce }}"
   register: munge_key_source_stat
 
 - name: Refuse to run without the cluster Munge key
