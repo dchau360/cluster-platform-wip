@@ -19,6 +19,26 @@
     src: update-mirror.sh.j2
     dest: /usr/local/sbin/update-cluster-mirror
     mode: "0755"
+- name: Remove the distribution nginx default site
+  become: true
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Restart nginx
+- name: Publish the deployed repository on the provisioning address
+  become: true
+  ansible.builtin.template:
+    src: nginx-git.conf.j2
+    dest: /etc/nginx/sites-available/cluster-git
+    mode: "0644"
+  notify: Restart nginx
+- name: Enable the deployed repository nginx site
+  become: true
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/cluster-git
+    dest: /etc/nginx/sites-enabled/cluster-git
+    state: link
+  notify: Restart nginx
 - name: Install mirror units
   become: true
   ansible.builtin.template:

@@ -1,0 +1,9 @@
+server {
+    listen {{ lab_prov_gw }}:80;
+    server_name _;
+
+    location /git/ {
+        alias /srv/git/published/;
+        autoindex on;
+    }
+}
