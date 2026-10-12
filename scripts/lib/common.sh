@@ -119,8 +119,10 @@ node_mac() {
     $(( ($1 >> 16) & 0xff )) $(( ($1 >> 8) & 0xff )) $(( $1 & 0xff ))
 }
 
-# Address handed out statically to node index 1..NODE_COUNT.
-node_ip() { printf '10.42.0.%d' $(( 10 + $1 )); }
+# Address handed out statically to node index 1..NODE_COUNT. The offset is
+# a variable so the formula has one definition; the Warewulf role reads the
+# same variable to define a node's address in Warewulf's database.
+node_ip() { printf '10.42.0.%d' $(( ${PROV_NODE_IP_OFFSET:-10} + $1 )); }
 
 lab_node_indexes() { seq 1 "${NODE_COUNT}"; }
 

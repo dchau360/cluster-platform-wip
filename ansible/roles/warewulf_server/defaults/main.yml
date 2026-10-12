@@ -29,3 +29,80 @@ warewulf_server_packages:
   - pkg-config
   - python3-sphinx
   - tftpd-hpa
+
+# ---------------------------------------------------------------------------
+# Where Warewulf keeps things.
+#
+# The server is built from source with the default prefix, so `wwctl` reads
+# /usr/local/etc/warewulf/warewulf.conf and writes state under /var/local.
+# A role that assumed the packaged paths (/etc/warewulf, /var/lib/warewulf)
+# would write files the daemon never reads, which is the kind of failure
+# that looks like a broken boot rather than a wrong path.
+# ---------------------------------------------------------------------------
+warewulf_server_conf_dir: /usr/local/etc/warewulf
+warewulf_server_conf_file: "{{ warewulf_server_conf_dir }}/warewulf.conf"
+warewulf_server_state_root: >-
+  {{ lookup('env', 'WAREWULF_STATE_ROOT') | default('/var/local/warewulf', true) }}
+warewulf_server_tftproot: >-
+  {{ lookup('env', 'WAREWULF_TFTP_ROOT')
+     | default(warewulf_server_state_root ~ '/tftpboot', true) }}
+warewulf_server_overlay_dir: "{{ warewulf_server_state_root }}/overlays"
+warewulf_server_ipxe_source: /usr/lib/ipxe
+warewulf_server_http_port: "{{ lookup('env', 'WAREWULF_HTTP_PORT') | default(9873, true) | int }}"
+
+# The provisioning network. Lab-internal, from group_vars, never host-specific.
+warewulf_server_ipaddr: "{{ lab_prov_gw }}"
+warewulf_server_netmask: "{{ lab_prov_netmask }}"
+warewulf_server_network: "{{ lab_prov_network }}"
+
+# ---------------------------------------------------------------------------
+# The node image.
+#
+# Public GHCR package, imported by URI with no credential, because a
+# credential on the provisioning host is a credential on every node that
+# can reach it. The tag is a variable so a rollback is an environment
+# change and a reboot, not a rebuild.
+# ---------------------------------------------------------------------------
+warewulf_server_image_registry: >-
+  {{ lookup('env', 'WAREWULF_IMAGE_REGISTRY')
+     | default('ghcr.io/dchau360/cluster-images-wip', true) }}
+warewulf_server_image_name: >-
+  {{ lookup('env', 'WAREWULF_IMAGE_NAME') | default('compute-slurm', true) }}
+warewulf_server_image_tag: >-
+  {{ lookup('env', 'WAREWULF_IMAGE_TAG') | default('latest', true) }}
+warewulf_server_image_uri: >-
+  docker://{{ warewulf_server_image_registry }}/{{ warewulf_server_image_name }}:{{ warewulf_server_image_tag }}
+warewulf_server_image_state_file: "{{ warewulf_server_state_root }}/.cluster-lab-image"
+
+# iPXE provisioning method, as a Warewulf node tag.
+#
+# The two-stage `dracut` method is the one that works with the iPXE binary a
+# distribution ships: it needs no `imgextract` command, which is a Warewulf
+# patch absent from the Ubuntu `ipxe` package. The image's initramfs must
+# contain the `wwinit` module for this, which cluster-images-wip builds in.
+warewulf_server_ipxe_method: >-
+  {{ lookup('env', 'WAREWULF_IPXE_METHOD') | default('dracut', true) }}
+
+# ---------------------------------------------------------------------------
+# Cluster identity material.
+#
+# Generated on this host, stored outside both repositories, delivered to
+# each node by a Warewulf runtime overlay at boot. Never in git, never in
+# an image.
+# ---------------------------------------------------------------------------
+warewulf_server_secret_dir: /etc/cluster-lab
+warewulf_server_munge_key: "{{ warewulf_server_secret_dir }}/munge.key"
+warewulf_server_identity_overlay: cluster-identity
+
+# Node addressing, mirroring scripts/lib/common.sh. Values, not formulas:
+# the formula stays in one place and these are derived from the same
+# environment, so a change to PROV_MAC_OUI or the IP offset lands in both.
+warewulf_server_mac_oui: "{{ lookup('env', 'PROV_MAC_OUI') | default('52:54:00', true) }}"
+warewulf_server_node_ip_offset: "{{ lab_node_ip_offset | default(10) }}"
+warewulf_server_node_netdev: eth0
+
+# Warewulf keeps its own DHCP/TFTP service names in the config. The lab's
+# dnsmasq is owned by the harness (scripts/net-up.sh) and is the only DHCP
+# server on the segment, so Warewulf must not start a second one.
+warewulf_server_manage_dhcp: false
+warewulf_server_manage_tftp: false

@@ -91,6 +91,9 @@ fi
 
 ensure_dir "$LAB_STATE_DIR/dnsmasq" 0755
 ensure_dir "$LAB_TFTP_DIR"          0755
+# dnsmasq refuses to serve a TFTP root that does not exist, so create
+# Warewulf's tree even before the role has filled it with boot programmes.
+ensure_dir "$WAREWULF_TFTP_ROOT"    0755
 
 # NetBox owns reservations. Keep an empty generated file available during
 # first boot; the head-node play replaces it after NetBox is seeded.
@@ -121,14 +124,21 @@ dhcp-option=option:dns-server,$PROV_GW
 dhcp-hostsfile=$LAB_STATE_DIR/dnsmasq/netbox-hosts.conf
 dhcp-leasefile=$LAB_STATE_DIR/dnsmasq/leases
 
-# UEFI x86-64 netboot. The GRUB handoff itself is owned by the PXE task;
-# this is the DHCP side of it.
-dhcp-match=set:efi-x86-64,option:client-arch,7
-dhcp-match=set:efi-x86-64,option:client-arch,9
-dhcp-boot=tag:efi-x86-64,bootx64.efi
+# Warewulf PXE chain. DHCP still comes from NetBox via netbox-hosts.conf;
+# these options only add the boot programme. A UEFI client is handed iPXE
+# over TFTP, and iPXE is handed its script by warewulfd over HTTP. This
+# mirrors Warewulf's own dnsmasq template, minus the DHCP server it would
+# otherwise start — the lab's dnsmasq is the only one on the segment.
+dhcp-match=set:x86PC,option:client-arch,7
+dhcp-match=set:x86PC,option:client-arch,9
+dhcp-match=set:iPXE,77,"iPXE"
+dhcp-userclass=set:iPXE,iPXE
+dhcp-boot=tag:x86PC,"/warewulf/snponly.efi"
+dhcp-boot=tag:iPXE,"http://$PROV_GW:$WAREWULF_HTTP_PORT/ipxe/\${mac:hexhyp}?assetkey=\${asset}&uuid=\${uuid}"
+dhcp-no-override
 
 enable-tftp
-tftp-root=$LAB_TFTP_DIR
+tftp-root=$WAREWULF_TFTP_ROOT
 tftp-no-blocksize
 
 log-dhcp

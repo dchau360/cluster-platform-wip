@@ -33,11 +33,30 @@ lab service and reaches nothing. See
 | --- | --- | --- |
 | Power on, UEFI firmware | OVMF via libvirt | working |
 | DHCP discover, offer, lease | `lab-dnsmasq.service` | working |
-| TFTP request for the boot file | `lab-dnsmasq.service` | working |
-| GRUB, kernel and initramfs handoff | PXE task | stubbed |
-| Image fetch and pivot | Warewulf | stubbed |
-| Per-node overlay: host keys, Munge key, TLS | Warewulf overlay | stubbed |
+| TFTP request for the iPXE boot file | `lab-dnsmasq.service` | working |
+| iPXE script, kernel and initramfs | `warewulfd` over HTTP on `br-prov` | working |
+| Image fetch, overlay apply, pivot | Warewulf, two-stage `dracut` | working |
+| Per-node overlay: SSH host keys, Munge key | Warewulf runtime overlay | working |
 | Slurm compute joins the controller | Slurm task | stubbed |
+
+"Working" means observed end to end on the lab host: a q35/OVMF node
+PXE-boots, iPXE fetches its script from `http://10.42.0.1:9873`, loads the
+kernel and the `wwinit` initramfs, pivots into the provisioned image, and
+reaches a login prompt. The runtime overlay delivers the cluster Munge key
+and per-node SSH host keys; neither is in git or in an image layer.
+
+Two things about the Warewulf half are worth recording because they are
+configuration, not code, and both cost time to find:
+
+* The server is built from source with the default prefix, so `wwctl` reads
+  `/usr/local/etc/warewulf/warewulf.conf` and writes state under
+  `/var/local/warewulf`. The packaged paths (`/etc/warewulf`,
+  `/var/lib/warewulf`) are not used.
+* The Ubuntu `ipxe` package has no `imgextract` command, which is a
+  Warewulf patch. The node tag therefore selects the two-stage `dracut`
+  method, and the node image must ship an initramfs built with the
+  `wwinit` dracut module. `cluster-images-wip` builds that in; without it
+  the node stops at `Failed to mount /sysroot`.
 
 Each phase is a `phase_begin` / `phase_end` pair, per node. The phases
 above the line record today; the ones below record as they are built, into
@@ -87,6 +106,23 @@ $LAB_VM_DIR/
   <node>.qcow2            node disk
   nvram/<node>.fd         per-VM UEFI variables
   console/<node>.log      serial console
+```
+
+Warewulf keeps its own tree, because `wwctl` owns it and not the `make`
+harness. It is outside both repositories, and the Munge key inside it is
+the one piece of state that must never be copied into either:
+
+```text
+$WAREWULF_STATE_ROOT/            /var/local/warewulf
+  chroots/<image>/               imported node image (kernel, initramfs with wwinit)
+  overlays/<name>/rootfs/        site overlays; cluster-identity holds the Munge key
+  provision/images/              built squashfs served to nodes
+  provision/overlays/<node>/     per-node runtime and system overlay images
+  tftpboot/warewulf/             iPXE binaries served by dnsmasq
+
+/etc/cluster-lab/
+  munge.key                      generated once, 0400 root, untracked
+  netbox.env                     NetBox runtime secrets, 0600 root
 ```
 
 None of it is in git, and `.gitignore` covers the shapes anyway, so an

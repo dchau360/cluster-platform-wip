@@ -46,6 +46,45 @@
 - name: Flush systemd reload before service management
   ansible.builtin.meta: flush_handlers
 
+# ---------------------------------------------------------------------------
+# Server configuration.
+#
+# `wwctl` reads /usr/local/etc/warewulf/warewulf.conf because the server is
+# built from source with the default prefix. The packaged path is not used
+# here, and writing there would be a silent no-op.
+# ---------------------------------------------------------------------------
+
+- name: Create the Warewulf configuration directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ warewulf_server_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Render the Warewulf server configuration
+  become: true
+  ansible.builtin.template:
+    src: warewulf.conf.j2
+    dest: "{{ warewulf_server_conf_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Warewulf
+
+- name: Apply configuration changes before touching services
+  ansible.builtin.meta: flush_handlers
+
+- name: Populate the TFTP tree with the iPXE boot programmes
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    cmd: wwctl configure tftp
+  # The command rewrites the same files every time; the change that matters
+  # is the rendered configuration above, which notifies the restart.
+  changed_when: false
+
 - name: Enable and start Warewulf
   become: true
   when: not ansible_check_mode
@@ -53,3 +92,141 @@
     name: warewulfd
     enabled: true
     state: started
+
+# ---------------------------------------------------------------------------
+# Node image, imported from a public registry.
+# ---------------------------------------------------------------------------
+
+- name: Read the imported-image marker
+  become: true
+  ansible.builtin.slurp:
+    src: "{{ warewulf_server_image_state_file }}"
+  register: warewulf_server_image_state
+  failed_when: false
+
+- name: Import the node image when its tag has changed
+  become: true
+  when:
+    - not ansible_check_mode
+    - (warewulf_server_image_state.content is not defined)
+      or ((warewulf_server_image_state.content | b64decode | trim)
+          != warewulf_server_image_tag)
+  ansible.builtin.command:
+    cmd: >-
+      wwctl image import --build --force
+      {{ warewulf_server_image_uri }} {{ warewulf_server_image_name }}
+  register: warewulf_server_image_import
+  changed_when: warewulf_server_image_import.rc == 0
+
+- name: Record which image tag is imported
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.copy:
+    content: "{{ warewulf_server_image_tag }}\n"
+    dest: "{{ warewulf_server_image_state_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+# ---------------------------------------------------------------------------
+# Cluster identity, delivered at boot and never stored in git or an image.
+# ---------------------------------------------------------------------------
+
+- name: Create the secret directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ warewulf_server_secret_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Generate the cluster Munge key once
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    cmd: dd if=/dev/urandom of={{ warewulf_server_munge_key }} bs=1 count=1024
+    creates: "{{ warewulf_server_munge_key }}"
+
+- name: Restrict the Munge key
+  become: true
+  ansible.builtin.file:
+    path: "{{ warewulf_server_munge_key }}"
+    owner: root
+    group: root
+    mode: "0400"
+
+- name: Create the identity overlay tree
+  become: true
+  ansible.builtin.file:
+    path: >-
+      {{ warewulf_server_overlay_dir }}/{{ warewulf_server_identity_overlay
+         }}/rootfs/etc/munge
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deliver the Munge key through the overlay
+  become: true
+  ansible.builtin.copy:
+    src: "{{ warewulf_server_munge_key }}"
+    dest: >-
+      {{ warewulf_server_overlay_dir }}/{{ warewulf_server_identity_overlay
+         }}/rootfs/etc/munge/munge.key
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0400"
+  notify: Rebuild overlays
+
+# ---------------------------------------------------------------------------
+# Node and profile definitions, derived from the node count.
+#
+# No node list exists in this repository. `lab_node_count` is the same
+# variable `make demo N=<n>` sets, and N=2 and N=4 differ only in this loop.
+# ---------------------------------------------------------------------------
+
+- name: Read the Warewulf node database
+  become: true
+  ansible.builtin.slurp:
+    src: "{{ warewulf_server_conf_dir }}/nodes.conf"
+  register: warewulf_server_nodes_file
+  failed_when: false
+
+- name: Parse the existing node names
+  ansible.builtin.set_fact:
+    warewulf_server_existing_nodes: >-
+      {{ ((warewulf_server_nodes_file.content | b64decode | from_yaml).nodes
+          | default({}, true))
+         if (warewulf_server_nodes_file.content is defined) else {} }}
+
+- name: Point the default profile at the image and the identity overlay
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    cmd: >-
+      wwctl profile set -y default
+      --image {{ warewulf_server_image_name }}
+      --runtime-overlays
+      hosts,ssh.authorized_keys,{{ warewulf_server_identity_overlay }}
+      --tagadd IPXEMenuEntry={{ warewulf_server_ipxe_method }}
+  changed_when: false
+
+- name: Define every node from the node count
+  become: true
+  when:
+    - not ansible_check_mode
+    - (lab_node_name_prefix ~ ('%02d' | format(item)))
+      not in (warewulf_server_existing_nodes | default({}))
+  ansible.builtin.command:
+    cmd: >-
+      wwctl node add -y {{ lab_node_name_prefix }}{{ '%02d' | format(item) }}
+      --ipaddr {{ warewulf_server_network }}.{{ (warewulf_server_node_ip_offset | int) + item }}
+      --netdev {{ warewulf_server_node_netdev }}
+      --hwaddr {{ warewulf_server_mac_oui }}:00:{{ '%02x' | format(item // 256) }}:{{ '%02x' | format(item % 256) }}
+  loop: "{{ range(1, (lab_node_count | int) + 1) | list }}"
+  loop_control:
+    label: "{{ lab_node_name_prefix }}{{ '%02d' | format(item) }}"
+  register: warewulf_server_node_add
+  changed_when: warewulf_server_node_add.rc == 0
