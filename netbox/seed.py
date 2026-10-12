@@ -63,7 +63,11 @@ def main():
     for name, address_range in definition["pools"].items():
         start, end = address_range.split("-")
         start, end = f"{start}/32", f"{end}/32"
-        changes += ensure(nb.ipam.ip_ranges, {"start_address": start}, {"start_address": start, "end_address": end, "status": "active", "description": f"{name} allocation pool", "mark_utilized": False})
+        # Keyed on the description, not the start address: widening or moving a
+        # pool is then an update of the range that already exists instead of a
+        # second range left behind at the old start.
+        description = f"{name} allocation pool"
+        changes += ensure(nb.ipam.ip_ranges, {"description": description}, {"start_address": start, "end_address": end, "status": "active", "description": description, "mark_utilized": False})
     for field in definition["custom_fields"]:
         # Device convergence fields are declared as text for broad NetBox-version
         # compatibility; writers retain the typed semantics in their values.

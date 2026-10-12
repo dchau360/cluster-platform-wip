@@ -74,6 +74,35 @@ warewulf_server_image_uri: >-
   docker://{{ warewulf_server_image_registry }}/{{ warewulf_server_image_name }}:{{ warewulf_server_image_tag }}
 warewulf_server_image_state_file: "{{ warewulf_server_state_root }}/.cluster-lab-image"
 
+# ---------------------------------------------------------------------------
+# The discovery image and profile.
+#
+# A machine with no identity yet boots this image instead of a provisioned
+# one. It scrapes itself and writes its own NetBox record, then the next boot
+# can be a provisioned image. The discovery payload never holds a credential:
+# the NetBox endpoint and token arrive at boot from the cluster-discovery
+# runtime overlay below, exactly like the Munge key.
+#
+# The image is served from the same public registry as the node image, by
+# tag, so discovery and provisioning share one rollback story.
+# ---------------------------------------------------------------------------
+warewulf_server_discovery_image_name: >-
+  {{ lookup('env', 'WAREWULF_DISCOVERY_IMAGE_NAME') | default('discovery', true) }}
+warewulf_server_discovery_image_tag: "{{ warewulf_server_image_tag }}"
+warewulf_server_discovery_image_dir: >-
+  {{ warewulf_server_image_registry }}/{{ warewulf_server_discovery_image_name }}
+warewulf_server_discovery_image_uri: >-
+  docker://{{ warewulf_server_discovery_image_dir }}:{{ warewulf_server_discovery_image_tag }}
+warewulf_server_discovery_image_state_file: >-
+  {{ warewulf_server_state_root }}/.cluster-lab-discovery-image
+warewulf_server_discovery_overlay: cluster-discovery
+warewulf_server_discovery_env_dir: /etc/cluster-discovery
+
+# The NetBox environment the role reads to build the discovery overlay. The
+# netbox role writes it; this role only reads it, so the discovery overlay
+# can carry the URL and token without those values entering git or an image.
+warewulf_server_netbox_env_file: /etc/cluster-lab/netbox.env
+
 # iPXE provisioning method, as a Warewulf node tag.
 #
 # The two-stage `dracut` method is the one that works with the iPXE binary a

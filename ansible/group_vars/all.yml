@@ -26,6 +26,17 @@ lab_prov_network: >-
 lab_prov_netmask: "{{ lookup('env', 'PROV_NETMASK') | default('255.255.255.0', true) }}"
 lab_node_ip_offset: "{{ lookup('env', 'PROV_NODE_IP_OFFSET') | default('10', true) }}"
 
+# NetBox as seen from a node on the provisioning segment.
+#
+# The control host reaches the API on 127.0.0.1:8000 and the seeder keeps
+# using that. A node cannot: it needs the API on the segment gateway.
+# sushy-emulator already owns <lab_prov_gw>:8000 (Redfish), so NetBox gets its
+# own port on the same address. Binding to lab_prov_gw and not 0.0.0.0 keeps
+# the API off the WSL NAT interface, so the isolation property is preserved:
+# the API is reachable only from the provisioning bridge.
+lab_netbox_segment_port: "{{ lookup('env', 'NETBOX_SEGMENT_PORT') | default(8001, true) }}"
+lab_netbox_segment_url: "http://{{ lab_prov_gw }}:{{ lab_netbox_segment_port }}"
+
 # Writable lab state. Never inside the repo, never in git.
 lab_state_dir: "{{ lookup('env', 'LAB_STATE_DIR') | default('/var/lib/cluster-lab', true) }}"
 
