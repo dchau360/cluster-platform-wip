@@ -3,7 +3,7 @@
 # run the calling script opened (LAB_RUN_ID, LAB_TIMING_DIR). The day-2 plays
 # time each node's phases into the same NDJSON stream as every other phase.
 # Inputs: day2_phase, day2_phase_node, day2_phase_start, day2_phase_status.
-- name: "Record phase {{ day2_phase }} for {{ day2_phase_node }}"
+- name: "Record a timing phase: {{ day2_phase }}"
   when: lookup('env', 'LAB_TIMING_DIR') | length > 0
   vars:
     day2_phase_end: "{{ now(utc=true).timestamp() }}"

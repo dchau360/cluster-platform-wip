@@ -4,7 +4,7 @@
   gather_facts: false
   tasks:
     - name: Wait for systemd inside the container
-      ansible.builtin.command:
+      ansible.builtin.command:  # noqa: command-instead-of-module
         cmd: systemctl is-system-running --wait
       register: node_pull_systemd
       changed_when: false

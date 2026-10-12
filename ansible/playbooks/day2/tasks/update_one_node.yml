@@ -1,24 +1,24 @@
 ---
-- name: "Read what {{ rolling_node }} runs now"
+- name: "Read what the node runs now: {{ rolling_node }}"
   become: true
   ansible.builtin.command:
     cmd: wwctl node list --json {{ rolling_node }}
   register: rolling_current_raw
   changed_when: false
 
-- name: "Remember {{ rolling_node }}'s current image for a rollback"
+- name: "Remember the current image for a rollback: {{ rolling_node }}"
   ansible.builtin.set_fact:
     rolling_previous_image: "{{ (rolling_current_raw.stdout | from_json)[rolling_node]['image name'] }}"
     rolling_previous_reference: >-
       {{ ((rolling_current_raw.stdout | from_json)[rolling_node]['tags'] | default({}, true)).image_reference
          | default('') }}
 
-- name: "{{ rolling_node }} already runs {{ rolling_tag }}"
+- name: "Skip a node already on the new image: {{ rolling_node }}"
   when: rolling_previous_image == rolling_ww_image
   ansible.builtin.debug:
     msg: "{{ rolling_node }} is on {{ rolling_ww_image }}; nothing to do"
 
-- name: "Roll {{ rolling_node }} to {{ rolling_tag }}"
+- name: "Roll one node to the new image: {{ rolling_node }}"
   when: rolling_previous_image != rolling_ww_image
   block:
     - name: Start the drain clock
@@ -36,7 +36,7 @@
           - "Reason=rolling update to {{ rolling_tag }}"
       changed_when: true
 
-    - name: "Wait for {{ rolling_node }}'s running jobs to finish"
+    - name: "Wait for the running jobs to finish: {{ rolling_node }}"
       ansible.builtin.command:
         cmd: sinfo --noheader --Node --nodes={{ rolling_node }} --format=%T
       register: rolling_drain_state
@@ -99,7 +99,7 @@
       vars:
         rolling_expect_tag: "{{ rolling_previous_reference | regex_replace('^.*:', '') }}"
 
-    - name: "Resume {{ rolling_node }} on its previous image"
+    - name: "Resume the node on its previous image: {{ rolling_node }}"
       become: true
       ansible.builtin.command:
         argv: [scontrol, update, "NodeName={{ rolling_node }}", State=RESUME]

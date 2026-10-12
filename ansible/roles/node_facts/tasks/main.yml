@@ -25,8 +25,10 @@
     src: "{{ node_facts_file }}"
   register: node_facts_fixture
 
+# `node_facts` is this role's public output, read by every other node role,
+# so it is named after the role rather than prefixed by it.
 - name: Hold the facts for this run
-  ansible.builtin.set_fact:
+  ansible.builtin.set_fact:  # noqa: var-naming[no-role-prefix]
     node_facts: >-
       {{ node_facts_response.json
          if (node_facts_file | length == 0)

@@ -10,7 +10,7 @@
       changed_when: false
 
     - name: The node's services are enabled
-      ansible.builtin.command:
+      ansible.builtin.command:  # noqa: command-instead-of-module
         cmd: systemctl is-enabled munge slurmd node_exporter
       changed_when: false
 

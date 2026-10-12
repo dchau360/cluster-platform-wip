@@ -18,9 +18,10 @@
   register: slurm_config_netbox_env
   no_log: true
 
+# Same fact the netbox role sets, so either path leaves one token in play.
 - name: Derive the NetBox token
   when: netbox_runtime_token is not defined
-  ansible.builtin.set_fact:
+  ansible.builtin.set_fact:  # noqa: var-naming[no-role-prefix]
     netbox_runtime_token: >-
       nbt_{{ (slurm_config_netbox_env.content | b64decode
               | regex_search('(?m)^SUPERUSER_API_KEY=(.+)$', '\1')).0

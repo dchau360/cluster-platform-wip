@@ -6,7 +6,7 @@
     # scontrol prints the controller's local time, without a zone.
     rolling_reboot_local: "{{ now(utc=false).strftime('%Y-%m-%dT%H:%M:%S') }}"
 
-- name: "Set {{ rolling_node }}'s image to {{ rolling_target_image }}"
+- name: "Set the node's Warewulf image to {{ rolling_target_image }}"
   become: true
   ansible.builtin.command:
     argv:

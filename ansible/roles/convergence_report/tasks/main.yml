@@ -1,8 +1,9 @@
 ---
 # Reporting observes the run; it is not configuration. Every task here is
 # `changed_when: false` so a second, no-op run still reports `changed=0`.
+# Read-only; the git module checks out, it does not report HEAD.
 - name: Read the commit this run applied
-  ansible.builtin.command:
+  ansible.builtin.command:  # noqa: command-instead-of-module
     cmd: git -C "{{ playbook_dir }}" rev-parse HEAD
   register: convergence_report_sha
   changed_when: false
