@@ -12,7 +12,7 @@ SUSHY_EMULATOR_LIBVIRT_URI = '{{ sushy_emulator_libvirt_uri }}'
 # Real boot-order changes: sushy rewrites the libvirt domain's
 # per-device `<boot order=...>` elements. Setting this true would replace
 # that with a floppy stub, so it stays false.
-SUSHY_EMULATOR_IGNORE_BOOT_DEVICE = {{ sushy_emulator_ignore_boot_device | bool | lower }}
+SUSHY_EMULATOR_IGNORE_BOOT_DEVICE = {{ 'True' if sushy_emulator_ignore_boot_device | bool else 'False' }}
 
 # No TLS. The endpoint is bound to the provisioning segment only, and the
 # nodes on it are the ones being managed; adding a self-signed cert here

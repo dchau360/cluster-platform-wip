@@ -72,6 +72,18 @@
     mode: "0640"
   notify: Restart sushy-emulator
 
+# The configuration is a Python file, not YAML. A template that renders
+# `false` instead of `False` starts the unit, which then exits in a restart
+# loop with a NameError. Compile it here so that class of mistake fails the
+# play with a clear message instead.
+- name: Validate the rendered emulator configuration
+  become: true
+  ansible.builtin.command:
+    cmd: >-
+      python3 -c "compile(open('{{ sushy_emulator_config }}').read(),
+      '{{ sushy_emulator_config }}', 'exec')"
+  changed_when: false
+
 - name: Install the emulator systemd unit
   become: true
   ansible.builtin.template:
