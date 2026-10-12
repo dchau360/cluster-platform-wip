@@ -52,6 +52,16 @@ die()  { printf '%serror%s %s\n' "$_C_RED" "$_C_RST" "$*" >&2; exit 1; }
 lab_load_env() {
   [[ -f "$LAB_ENV_EXAMPLE" ]] || die "missing $LAB_ENV_EXAMPLE"
 
+  # A value the caller already set wins over both files, so a one-off
+  # `CONVERGENCE_STALE_SECONDS=60 make convergence-status` does what it says
+  # instead of being silently replaced by the default.
+  local -A caller_env=()
+  local key
+  while IFS= read -r key; do
+    [[ -n "${!key+x}" ]] && caller_env[$key]="${!key}"
+  done < <(cat "$LAB_ENV_EXAMPLE" "$LAB_ENV_FILE" 2>/dev/null \
+             | grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' | tr -d = | sort -u)
+
   set -a
   # Defaults. Host-specific keys are blank here on purpose.
   # shellcheck disable=SC1090
@@ -61,6 +71,9 @@ lab_load_env() {
     source <(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$LAB_ENV_FILE")
   fi
   set +a
+  for key in "${!caller_env[@]}"; do
+    export "$key=${caller_env[$key]}"
+  done
 
   # `N` on the make command line always wins. Nothing in this repo may
   # assume a node count.
