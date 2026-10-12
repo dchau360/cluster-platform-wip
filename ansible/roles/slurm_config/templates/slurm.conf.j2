@@ -26,7 +26,12 @@ ProctrackType=proctrack/cgroup
 TaskPlugin=task/cgroup,task/affinity
 SelectType=select/cons_tres
 SelectTypeParameters=CR_Core_Memory
+{% if slurm_config_model.switches %}
 TopologyPlugin=topology/tree
+{% else %}
+# No active node is cabled to a switch yet (every node may be in burn-in), and
+# topology/tree is fatal with no switches, so no topology plugin until there is.
+{% endif %}
 {% if slurm_config_model.gres %}
 GresTypes=gpu
 {% endif %}
