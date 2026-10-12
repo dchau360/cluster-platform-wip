@@ -32,7 +32,9 @@ for d in sorted(json.load(sys.stdin)["results"], key=lambda d: d["name"]):
     result = c.get("convergence_result") or "-"
     sha = (c.get("last_git_sha") or "-")[:12]
     flag = ""
-    if age is None or age > stale:
+    if d["status"]["value"] not in ("staged", "active", "failed"):
+        flag = ""  # not expected to be running, so never stale
+    elif age is None or age > stale:
         flag = "STALE"
     elif result != "success":
         flag = "FAILED"

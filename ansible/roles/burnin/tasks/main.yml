@@ -103,9 +103,13 @@
           {{ burnin_metrics.results[0].content | default('') | b64decode }}
         burnin_mem_text: >-
           {{ burnin_metrics.results[1].content | default('') | b64decode }}
+        # fio prints notes and errors ahead of its JSON report on stdout, so
+        # take only the top-level object; anything else is a failed check.
+        burnin_fio_json: >-
+          {{ burnin_fio.stdout | default('')
+             | regex_search('(?ms)^[{].*^[}]') | default('{}', true) }}
         burnin_fio_job: >-
-          {{ ((burnin_fio.stdout | default('{}', true) | from_json).jobs
-              | default([{}])) | first }}
+          {{ ((burnin_fio_json | from_json).jobs | default([{}])) | first }}
       ansible.builtin.set_fact:
         burnin_body:
           reported_at: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}"
