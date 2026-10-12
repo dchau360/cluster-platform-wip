@@ -79,6 +79,24 @@ ensure_dir "$LAB_STATE_DIR/xml"  0755
 
 log "bringing up ${NODE_COUNT} node(s)"
 
+# Decide which nodes this run will actually boot, BEFORE booting any of them,
+# and drop their old leases first. The dhcp-lease phase is only honest if the
+# lease it finds cannot be one from a previous run.
+declare -A STARTED_FRESH=()
+forget_macs=()
+for i in $(lab_node_indexes); do
+  name="$(node_name "$i")"
+  if ! domain_running "$name"; then
+    STARTED_FRESH["$name"]=1
+    forget_macs+=("$(node_mac "$i")")
+  fi
+done
+# An `&&` one-liner here would exit the script under `set -e` when the array
+# is empty, which is the ordinary case of "everything is already running".
+if (( ${#forget_macs[@]} > 0 )); then
+  lease_forget "${forget_macs[@]}"
+fi
+
 for i in $(lab_node_indexes); do
   name="$(node_name "$i")"
   mac="$(node_mac "$i")"
@@ -139,10 +157,21 @@ done
 # time would add each node's delay to the next node's measurement and
 # manufacture a linear 1-to-N curve out of nothing. The contention is the
 # thing being measured, so it has to be observed as it happens.
+#
+# Only a node that this run actually started can be measured. A node that was
+# already running will not ask for a new lease, so timing one for it would
+# either read the lease it already holds — a measurement of nothing — or wait
+# out the whole timeout and report a failure that is not one. Say `skip` and
+# mean it; see lease_forget() in lib/common.sh for the lease the wait must not
+# be allowed to see.
 LEASES="$LAB_STATE_DIR/dnsmasq/leases"
 declare -A PENDING_MAC=()
 for i in $(lab_node_indexes); do
   name="$(node_name "$i")"
+  if [[ -z "${STARTED_FRESH[$name]-}" ]]; then
+    phase_skip dhcp-lease "$name" "already running; no new lease expected"
+    continue
+  fi
   phase_begin dhcp-lease "$name"
   PENDING_MAC["$name"]="$(node_mac "$i")"
 done

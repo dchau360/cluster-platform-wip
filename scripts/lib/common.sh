@@ -216,6 +216,59 @@ ensure_unit_active() {
 
 # ---------------------------------------------------------------------------
 
+# Drop the dnsmasq lease for each MAC given, so the next lease observed for it
+# can only be one issued after this call.
+#
+# The dhcp-lease phase is measured by watching for the MAC in the lease file.
+# A lease left by a previous run matches on the first look, so the phase
+# reports 0.03s for something that takes five seconds — and reports it as `ok`.
+# `make nodes-down` without WIPE keeps the lease file, and that is the normal
+# cheap way to cycle nodes, so this is the common path rather than an edge
+# case. The 1-to-N curve is a deliverable, so a phase that can silently
+# measure nothing is worse than one that fails.
+#
+# dnsmasq also keeps leases in memory and owns the file, so editing the file is
+# only half of it: the daemon has to be restarted to re-read it. Same reason
+# the WIPE path in nodes-down.sh restarts it.
+lease_forget() {
+  local leases="$LAB_STATE_DIR/dnsmasq/leases" m pattern='' n
+  [[ -f "$leases" ]] || return 0
+  (( $# > 0 )) || return 0
+
+  for m in "$@"; do
+    [[ -n "$m" ]] || continue
+    pattern+="${pattern:+|}$(printf '%s' "$m" | sed 's/[][\.*^$|()+?{}]/\\&/g')"
+  done
+  [[ -n "$pattern" ]] || return 0
+
+  # Find out whether anything matches BEFORE touching the file.
+  #
+  # `sed -i` does not edit in place: it writes a new file and renames it over
+  # the old one, so it replaces the inode even when it changes no bytes. And
+  # dnsmasq holds the old inode open. Editing unconditionally would leave the
+  # daemon appending to a deleted file, making every later lease invisible —
+  # the wait then times out on a node that booted perfectly. That is the same
+  # failure the WIPE path in nodes-down.sh restarts the daemon to avoid, and
+  # the first version of this function walked straight back into it: it ran
+  # sed for every MAC, found nothing removed, and so skipped the restart.
+  #
+  # So: touch nothing unless there is something to remove, and restart
+  # whenever the file was touched.
+  n="$(sudo grep -ciE "$pattern" "$leases" 2>/dev/null || true)"
+  n="${n:-0}"
+  if (( n == 0 )); then
+    ok "no stale dhcp lease to clear"
+    return 0
+  fi
+
+  sudo sed -i -E "/$pattern/Id" "$leases"
+  changed "cleared $n stale dhcp lease(s) so the wait measures this boot"
+  if systemctl is-active --quiet lab-dnsmasq.service; then
+    sudo systemctl restart lab-dnsmasq.service
+    changed "lab-dnsmasq restarted so it reopens the lease file"
+  fi
+}
+
 lab_init() {
   LAB_SCRIPT_NAME="${LAB_SCRIPT_NAME:-$(basename "${BASH_SOURCE[1]:-lab}" .sh)}"
   lab_load_env

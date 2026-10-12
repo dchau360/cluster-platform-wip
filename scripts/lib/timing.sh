@@ -65,6 +65,23 @@ phase_end() {
   printf '%s<<%s %s%s %ss\n' "$_C_BLU" "$_C_RST" "$phase" "${node:+ [$node]}" "$secs"
 }
 
+# phase_skip <phase> [node] [reason]
+#
+# Record that a phase did not run, with no duration. A phase that could not be
+# measured must not land in the record as a fast one: `seconds` is null rather
+# than 0, so anything averaging the curve has to deal with it explicitly
+# instead of quietly pulling the mean down. The reason is kept, because
+# "skipped" without one is the same problem a step further on.
+phase_skip() {
+  local phase="$1" node="${2:-}" reason="${3:-}"
+  mkdir -p "$LAB_TIMING_DIR"
+  printf '{"run":"%s","n":%s,"phase":"%s","node":"%s","seconds":null,"status":"skip","reason":"%s"}\n' \
+    "$LAB_RUN_ID" "${NODE_COUNT:-0}" "$phase" "$node" "$reason" \
+    >> "$(_timing_file)"
+  printf '%s--%s %s%s skipped%s\n' "$_C_YLW" "$_C_RST" "$phase" "${node:+ [$node]}" \
+    "${reason:+: $reason}"
+}
+
 # Run a command as a timed phase. Records status=fail and re-raises on error.
 # timed <phase> <node|""> -- cmd...
 timed() {
@@ -100,8 +117,16 @@ timing_report() {
       /^phase/  {phase=$2}
       /^node/   {node=($2==""?"-":$2)}
       /^seconds/{secs=$2}
-      /^status/ {status=$2; printf "%-24s %-10s %10.3f %8s\n", phase, node, secs, status;
-                 total+=secs; if (node!="-") {pernode[node]+=secs}}
+      # A skipped phase has seconds=null. Printing it with %f would render it
+      # as 0.000 and add 0 to the total, which is the misleading reading this
+      # exists to avoid: an unmeasured phase would look like an instant one.
+      /^status/ {status=$2;
+                 if (status=="skip" || secs=="null")
+                   printf "%-24s %-10s %10s %8s\n", phase, node, "-", status;
+                 else {
+                   printf "%-24s %-10s %10.3f %8s\n", phase, node, secs, status;
+                   total+=secs; if (node!="-") {pernode[node]+=secs}
+                 }}
       END {printf "\n%-24s %-10s %10.3f\n", "TOTAL", "-", total}'
 
   local csv="${file%.ndjson}.csv"
