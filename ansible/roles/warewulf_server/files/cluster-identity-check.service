@@ -10,11 +10,12 @@ After=wwclient.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-# `tee` keeps a copy under /run for a later reader while the pipeline's stdout
-# stays on the unit's, which systemd sends to the journal and the console.
-ExecStart=/bin/sh -c '/usr/local/sbin/cluster-identity-check | tee /run/cluster-identity-check.txt'
-StandardOutput=journal+console
-StandardError=journal+console
+# `tee` writes the proof to a file for a later reader and directly to the
+# serial console, independent of systemd's console routing; the pipeline's
+# stdout still reaches the journal.
+ExecStart=/bin/sh -c '/usr/local/sbin/cluster-identity-check | tee /run/cluster-identity-check.txt /dev/console'
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
