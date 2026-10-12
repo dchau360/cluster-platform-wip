@@ -1,9 +1,55 @@
 ---
-- name: Install Warewulf server package
+- name: Install Warewulf runtime and source-build dependencies
+  become: true
+  ansible.builtin.apt:
+    name: "{{ warewulf_packages }}"
+    state: present
+    update_cache: true
+
+- name: Create the Warewulf source cache
+  become: true
+  ansible.builtin.file:
+    path: "{{ warewulf_source_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download the pinned Warewulf source release
+  become: true
+  ansible.builtin.get_url:
+    url: "{{ warewulf_source_url }}"
+    dest: "{{ warewulf_source_archive }}"
+    checksum: "sha256:{{ warewulf_source_sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Extract the pinned Warewulf source release
+  become: true
+  ansible.builtin.unarchive:
+    src: "{{ warewulf_source_archive }}"
+    dest: "{{ warewulf_source_root }}"
+    remote_src: true
+    creates: "{{ warewulf_source_dir }}/Makefile"
+
+- name: Build and install Warewulf from the pinned release
+  become: true
+  ansible.builtin.command:
+    cmd: make install
+    chdir: "{{ warewulf_source_dir }}"
+    creates: "{{ warewulf_binary }}"
+  environment:
+    OFFLINE_BUILD: "1"
+  notify: Reload systemd
+
+- name: Flush systemd reload before service management
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start Warewulf
   become: true
   when: not ansible_check_mode
-  ansible.builtin.package: {name: warewulf, state: present}
-- name: Enable Warewulf service
-  become: true
-  when: not ansible_check_mode
-  ansible.builtin.systemd_service: {name: warewulfd, enabled: true, state: started}
+  ansible.builtin.systemd_service:
+    name: warewulfd
+    enabled: true
+    state: started

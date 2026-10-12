@@ -1,0 +1,29 @@
+---
+warewulf_version: 4.7.1
+warewulf_source_sha256: >-
+  2f967add15488bef041ab91520b81fa5cc76d82fe625c198063a94aa1f4c7da9
+warewulf_source_root: /usr/local/src
+warewulf_source_archive: >-
+  {{ warewulf_source_root }}/warewulf-{{ warewulf_version }}.tar.gz
+warewulf_source_dir: >-
+  {{ warewulf_source_root }}/warewulf-{{ warewulf_version }}
+warewulf_source_url: >-
+  https://github.com/warewulf/warewulf/releases/download/v{{ warewulf_version }}/warewulf-{{ warewulf_version }}.tar.gz
+warewulf_binary: /usr/local/bin/wwctl
+warewulf_packages:
+  - build-essential
+  - cpio
+  - curl
+  - dnsmasq
+  - dracut-core
+  - git
+  - golang-go
+  - gzip
+  - ipxe
+  - libbtrfs-dev
+  - libdevmapper-dev
+  - libgpgme-dev
+  - nfs-kernel-server
+  - pkg-config
+  - python3-sphinx
+  - tftpd-hpa
