@@ -14,12 +14,15 @@
 # NetBox integration lives in ansible/roles/netbox.
 
 # netbox_runtime_token — the composite token the NetBox role generates.
-# Prints nothing and returns non-zero when the file is absent.
+#
+# The file is under /etc/cluster-lab, which is mode 0700 root:root, so an
+# unprivileged `[[ -f ]]` is false and must not be the gate. `sudo sed` is
+# the whole read; the key and token are only ever held in this shell.
+# Prints nothing and returns non-zero when the file is absent or unreadable.
 netbox_runtime_token() {
   local env_file=/etc/cluster-lab/netbox.env key token
-  [[ -f "$env_file" ]] || return 1
-  key="$(sudo sed -n 's/^SUPERUSER_API_KEY=//p' "$env_file" | head -1)"
-  token="$(sudo sed -n 's/^SUPERUSER_API_TOKEN=//p' "$env_file" | head -1)"
+  key="$(sudo sed -n 's/^SUPERUSER_API_KEY=//p' "$env_file" 2>/dev/null | head -1)"
+  token="$(sudo sed -n 's/^SUPERUSER_API_TOKEN=//p' "$env_file" 2>/dev/null | head -1)"
   [[ -n "$key" && -n "$token" ]] || return 1
   printf 'nbt_%s.%s' "$key" "$token"
 }
