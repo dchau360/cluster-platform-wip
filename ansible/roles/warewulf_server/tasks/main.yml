@@ -353,6 +353,7 @@
     cmd: >-
       wwctl profile set -y default
       --image {{ warewulf_server_image_name }}
+      --kernelargs {{ warewulf_server_kernel_args }}
       --runtime-overlays {{ warewulf_server_runtime_overlays | join(',') }}
       --tagadd IPXEMenuEntry={{ warewulf_server_ipxe_method }}
   changed_when: false

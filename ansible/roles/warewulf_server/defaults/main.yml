@@ -83,6 +83,21 @@ warewulf_server_image_state_file: "{{ warewulf_server_state_root }}/.cluster-lab
 warewulf_server_ipxe_method: >-
   {{ lookup('env', 'WAREWULF_IPXE_METHOD') | default('dracut', true) }}
 
+# Kernel arguments for every node.
+#
+# The serial console is not a convenience here: the boot-phase timings are
+# read off each node's serial console, so a node without `console=ttyS0`
+# boots correctly and reports nothing. It belongs on the default profile,
+# not on one node, or the first N where N > 1 silently records nothing.
+#
+# Warewulf stores kernel arguments comma-separated and renders them
+# space-separated, so the usual `console=ttyS0,115200n8` arrives as
+# `console=ttyS0 115200n8`. That is still a valid console argument; the
+# second token is ignored by the kernel and the emulated UART needs no baud.
+warewulf_server_kernel_args: >-
+  {{ lookup('env', 'WAREWULF_KERNEL_ARGS')
+     | default('quiet,crashkernel=no,net.ifnames=1,console=ttyS0,115200n8', true) }}
+
 # ---------------------------------------------------------------------------
 # Cluster identity material.
 #

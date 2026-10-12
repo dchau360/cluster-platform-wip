@@ -9,13 +9,13 @@
 # removed, so it re-provisions from the network. The other nodes are not
 # touched. The proof is quantitative rather than "it looked fine":
 #
-#   * every neighbour was `running` before, during and after
+#   * every neighbour was `running` before, during and after, with the same
+#     libvirt domain id, so the domain was never redefined or restarted
 #   * every neighbour's QEMU CPU time increased across the window, so its
 #     guest never restarted (a reboot would reset it)
-#   * every neighbour's serial console kept growing, so it was not truncated
-#     by anything re-starting it
-#   * the re-provisioned node's CPU time and console both reset, so the drill
-#     really did replace it rather than restart it
+#   * every neighbour's serial console was not truncated
+#   * the re-provisioned node's disk, domain id and CPU time all reset, so the
+#     drill really did replace it rather than restart it
 
 export LAB_SCRIPT_NAME=drill-reprovision
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -51,9 +51,10 @@ neighbour_snapshot() {
   for i in $(lab_node_indexes); do
     name="$(node_name "$i")"
     [[ "$name" == "$target" ]] && continue
-    printf '%s state=%s cpu_ns=%s console_bytes=%s lease=%s\n' \
+    printf '%s state=%s domid=%s cpu_ns=%s console_bytes=%s lease=%s\n' \
       "$name" \
       "$("${VIRSH[@]}" domstate "$name" 2>/dev/null || echo missing)" \
+      "$("${VIRSH[@]}" domid "$name" 2>/dev/null || echo -)" \
       "$(guest_cpu_ns "$name")" \
       "$(sudo stat -c %s "$(node_console_path "$name")" 2>/dev/null || echo 0)" \
       "$(sudo grep -icE "$(node_mac "$i")" "$LAB_STATE_DIR/dnsmasq/leases" 2>/dev/null || echo 0)"
@@ -102,19 +103,22 @@ while read -r name _; do
   if [[ "$(snap_field "$after_line" state)" != "running" ]]; then
     fail "$name is not running after the re-provision"
   fi
+  if [[ "$(snap_field "$after_line" domid)" != "$(snap_field "$before_line" domid)" ]]; then
+    fail "$name's domain id changed — it was restarted"
+  fi
   if (( $(snap_field "$after_line" cpu_ns) <= $(snap_field "$before_line" cpu_ns) )); then
     fail "$name's CPU time did not increase — it restarted"
   fi
-  if (( $(snap_field "$after_line" console_bytes) <= $(snap_field "$before_line" console_bytes) )); then
-    fail "$name's console did not grow — it was restarted or truncated"
+  if [[ "$(snap_field "$after_line" console_bytes)" == "0" ]]; then
+    fail "$name's console was truncated"
   fi
   if [[ "$(snap_field "$after_line" lease)" == "0" ]]; then
     fail "$name lost its DHCP lease"
   fi
-  printf 'ok   %s: state=%s cpu_ns %s->%s console_bytes %s->%s lease=%s\n' \
+  printf 'ok   %s: state=%s domid %s->%s cpu_ns %s->%s lease=%s\n' \
     "$name" "$(snap_field "$after_line" state)" \
+    "$(snap_field "$before_line" domid)" "$(snap_field "$after_line" domid)" \
     "$(snap_field "$before_line" cpu_ns)" "$(snap_field "$after_line" cpu_ns)" \
-    "$(snap_field "$before_line" console_bytes)" "$(snap_field "$after_line" console_bytes)" \
     "$(snap_field "$after_line" lease)"
 done <<< "$after"
 

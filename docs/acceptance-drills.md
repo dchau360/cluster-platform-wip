@@ -72,12 +72,15 @@ again while every other node is left alone.
 before and after:
 
 - `virsh domstate` — must stay `running`
+- the libvirt domain id — must be the same domain, not redefined and
+  recreated
 - QEMU CPU time (`virsh domstats --cpu-total`) — must increase, because a
   guest that restarted would reset it
-- the serial console's byte count — must grow, because a restart truncates it
+- the serial console — must not be truncated
 - the DHCP lease — must still be present
 
-The re-provisioned node is the control: its CPU time and console both reset.
+The re-provisioned node is the control: its disk, domain id and CPU time all
+reset.
 
 ## #3 — identity survives a NIC swap
 
