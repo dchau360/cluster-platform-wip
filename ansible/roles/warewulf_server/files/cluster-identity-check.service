@@ -1,0 +1,20 @@
+[Unit]
+Description=Prove per-node cluster identity material at boot
+Documentation=https://github.com/dchau360/cluster-platform-wip
+# Run as part of the multi-user transaction, ordered after the
+# runtime-overlay refresh unit when that unit is present. `After` without
+# `Requires` means a wwclient in a restart loop still cannot stop this check
+# from running: a failed start job completes and the check proceeds.
+After=wwclient.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# `tee` keeps a copy under /run for a later reader while the pipeline's stdout
+# stays on the unit's, which systemd sends to the journal and the console.
+ExecStart=/bin/sh -c '/usr/local/sbin/cluster-identity-check | tee /run/cluster-identity-check.txt'
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

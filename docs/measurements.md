@@ -83,19 +83,38 @@ Recording today:
 | `node-define` | node | disk create, domain XML render, `virsh define` |
 | `node-start` | node | `virsh start` to firmware handoff |
 | `dhcp-lease` | node | first DHCP lease on the isolated segment, this boot |
+| `firmware` | node | power-on through the UEFI PXE boot manager, to iPXE |
+| `ipxe` | node | iPXE init, DHCP and the iPXE script fetch, to the kernel fetch |
+| `kernel` | node | the kernel fetch |
+| `initramfs` | node | the iPXE boot-menu wait and the initramfs fetch |
+| `overlay` | node | the dracut stage: image, system and runtime overlay fetch + apply |
+| `login` | node | pivot to the node root and systemd start, through the prompt |
 
 Reserved for later tasks, so the names are stable before anything uses
 them:
 
 | Phase | Scope | Owner |
 | --- | --- | --- |
-| `tftp-fetch` | node | PXE task |
-| `grub-handoff` | node | PXE task |
 | `image-build` | run | images repository |
-| `image-fetch` | node | Warewulf task |
-| `overlay-apply` | node | Warewulf task |
-| `node-ready` | node | Warewulf task |
 | `slurm-join` | node | Slurm task |
+
+### How the boot phases are measured
+
+`scripts/lib/boot-phases.sh` follows the node's serial console live and
+records a phase when its marker appears. It is a live watcher rather than a
+parse of the finished log because firmware and iPXE print no timestamps of
+their own; only the wall clock at the moment a marker appeared gives them a
+duration. The phase boundaries are the markers, in order: `iPXE initialising
+devices`, `Downloading kernel image`, the kernel fetch's `ok`,
+the initramfs fetch's `ok`, `warewulf: invoking /sbin/init`, and `login:`.
+
+The console is opened `append=on`, so the watcher starts from the file size
+recorded before `virsh start` and reads only the bytes this boot appended. A
+node that was already running is recorded as `skip` for every boot phase: it
+did not boot this run, and timing the console it is not writing would be a
+measurement of nothing. A boot that never reaches a marker is recorded with
+`status=fail` on the phase it stalled in, after `BOOT_PHASE_TIMEOUT` seconds —
+not silently dropped.
 
 ## What to look for in the curve
 

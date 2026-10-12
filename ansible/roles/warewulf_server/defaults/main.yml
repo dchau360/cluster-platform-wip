@@ -94,6 +94,34 @@ warewulf_server_secret_dir: /etc/cluster-lab
 warewulf_server_munge_key: "{{ warewulf_server_secret_dir }}/munge.key"
 warewulf_server_identity_overlay: cluster-identity
 
+# A second site overlay carries the node-side wwclient configuration.
+#
+# The node's `wwclient` binary is built from source with the default /usr/local
+# prefix, so its compiled-in configuration path is
+# /usr/local/etc/warewulf/warewulf.conf (see `var ConfigFile` in
+# internal/pkg/config/buildconfig.go). The wwinit overlay renders the node's
+# configuration at /etc/warewulf/warewulf.conf instead, and the image never
+# has the /usr/local copy. `wwclient` exits immediately when its config file is
+# missing, so the runtime-overlay refresh unit fails on every boot and the
+# runtime overlay is never re-applied.
+#
+# The shipped unit already reads `EnvironmentFile=-/etc/default/wwclient`
+# (overlays/wwclient/rootfs/etc/systemd/system/wwclient.service). Pointing
+# WAREWULFCONF at the rendered node configuration uses that hook and does not
+# fork the unit or the binary.
+warewulf_server_wwclient_overlay: cluster-wwclient
+
+# The runtime overlays every node applies. `hosts` and `ssh.authorized_keys`
+# are warewulf built-ins; the two `cluster-*` overlays are this repository's
+# site overlays. Order is not significant to warewulf, which merges them into
+# one archive, but the list is data rather than a string built inline so a
+# later overlay is one line here.
+warewulf_server_runtime_overlays:
+  - hosts
+  - ssh.authorized_keys
+  - "{{ warewulf_server_identity_overlay }}"
+  - "{{ warewulf_server_wwclient_overlay }}"
+
 # Node addressing, mirroring scripts/lib/common.sh. Values, not formulas:
 # the formula stays in one place and these are derived from the same
 # environment, so a change to PROV_MAC_OUI or the IP offset lands in both.

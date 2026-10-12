@@ -13,6 +13,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/lib/common.sh"
 # shellcheck source=lib/timing.sh
 source "$HERE/lib/timing.sh"
+# shellcheck source=lib/boot-phases.sh
+source "$HERE/lib/boot-phases.sh"
 lab_load_env
 
 export LIBVIRT_DEFAULT_URI="$LIBVIRT_URI"
@@ -83,6 +85,7 @@ log "bringing up ${NODE_COUNT} node(s)"
 # and drop their old leases first. The dhcp-lease phase is only honest if the
 # lease it finds cannot be one from a previous run.
 declare -A STARTED_FRESH=()
+declare -A BOOT_WATCH_PID=()
 forget_macs=()
 for i in $(lab_node_indexes); do
   name="$(node_name "$i")"
@@ -129,6 +132,11 @@ for i in $(lab_node_indexes); do
   phase_end node-define "$name"
 
   phase_begin node-start "$name"
+  # The console is opened append=on, so everything already in it belongs to an
+  # earlier boot. Record the size before `virsh start` and the watcher reads
+  # only the bytes this boot appended.
+  console_log="$LAB_VM_DIR/console/${name}.log"
+  console_off="$(sudo stat -c %s "$console_log" 2>/dev/null || printf 0)"
   if domain_running "$name"; then
     ok "domain $name running"
   else
@@ -144,8 +152,16 @@ for i in $(lab_node_indexes); do
     done
     (( started == 1 )) || die "could not start domain $name after 3 attempts"
     changed "domain $name started"
+    # Observe the boot in the background so it can run while the DHCP wait
+    # below and the next node's start proceed in parallel.
+    boot_phases_watch "$name" "$console_log" "$console_off" &
+    BOOT_WATCH_PID["$name"]=$!
   fi
   phase_end node-start "$name"
+
+  if [[ -z "${STARTED_FRESH[$name]-}" ]]; then
+    boot_phases_skip "$name" "already running; no new boot to measure"
+  fi
 done
 
 # A DHCP lease from our dnsmasq is the first externally observable proof
@@ -191,4 +207,11 @@ done
 for name in "${!PENDING_MAC[@]}"; do
   phase_end dhcp-lease "$name" fail
   warn "no dhcp lease for $name after ${DHCP_LEASE_TIMEOUT}s — see $LAB_STATE_DIR/dnsmasq/dnsmasq.log"
+done
+
+# Wait for the console watchers. The DHCP lease says the segment carried
+# traffic; the console phases go all the way to the login prompt, so the
+# demo does not report a booted node before it can actually log in.
+for name in "${!BOOT_WATCH_PID[@]}"; do
+  wait "${BOOT_WATCH_PID[$name]}" || true
 done

@@ -181,6 +181,106 @@
   notify: Rebuild overlays
 
 # ---------------------------------------------------------------------------
+# Identity proof on every boot.
+#
+# The identity criterion is not "the overlay was built", it is "the booted
+# node has the files". A oneshot in the same runtime overlay checks that from
+# inside the node, after the overlay is applied, and writes to the console as
+# well as the journal. The boot transcript then carries the proof instead of a
+# human having to log in later.
+# ---------------------------------------------------------------------------
+
+- name: Create the identity-check directories in the identity overlay
+  become: true
+  ansible.builtin.file:
+    path: >-
+      {{ warewulf_server_overlay_dir }}/{{ warewulf_server_identity_overlay
+         }}/rootfs/{{ item }}
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - usr/local/sbin
+    - etc/systemd/system/multi-user.target.wants
+  notify: Rebuild overlays
+
+- name: Install the in-node identity check
+  become: true
+  ansible.builtin.copy:
+    src: cluster-identity-check.sh
+    dest: >-
+      {{ warewulf_server_overlay_dir }}/{{ warewulf_server_identity_overlay
+         }}/rootfs/usr/local/sbin/cluster-identity-check
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Rebuild overlays
+
+- name: Install the identity-check unit
+  become: true
+  ansible.builtin.copy:
+    src: cluster-identity-check.service
+    dest: >-
+      {{ warewulf_server_overlay_dir }}/{{ warewulf_server_identity_overlay
+         }}/rootfs/etc/systemd/system/cluster-identity-check.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Rebuild overlays
+
+- name: Enable the identity check
+  become: true
+  ansible.builtin.file:
+    src: ../cluster-identity-check.service
+    dest: >-
+      {{ warewulf_server_overlay_dir }}/{{ warewulf_server_identity_overlay
+         }}/rootfs/etc/systemd/system/multi-user.target.wants/cluster-identity-check.service
+    state: link
+    force: true
+  notify: Rebuild overlays
+
+# ---------------------------------------------------------------------------
+# Node wwclient configuration.
+#
+# See the note on warewulf_server_wwclient_overlay in defaults/main.yml. The
+# wwclient.service unit is installed by warewulf's built-in `wwclient` overlay;
+# this overlay only supplies the environment file that unit already reads.
+# ---------------------------------------------------------------------------
+
+- name: Create the node wwclient overlay tree
+  become: true
+  ansible.builtin.file:
+    path: >-
+      {{ warewulf_server_overlay_dir }}/{{ warewulf_server_wwclient_overlay
+         }}/rootfs/etc/default
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Rebuild overlays
+
+- name: Point the node wwclient at the rendered node configuration
+  become: true
+  ansible.builtin.copy:
+    dest: >-
+      {{ warewulf_server_overlay_dir }}/{{ warewulf_server_wwclient_overlay
+         }}/rootfs/etc/default/wwclient
+    content: |
+      # Read by warewulf's wwclient.service (`EnvironmentFile=-/etc/default/wwclient`).
+      # The node binary is built from source with the default /usr/local prefix,
+      # so its compiled-in path is /usr/local/etc/warewulf/warewulf.conf. The
+      # wwinit overlay renders the node configuration at
+      # /etc/warewulf/warewulf.conf and the image has no /usr/local copy, so
+      # without this the unit exits at startup and the runtime overlay is never
+      # refreshed.
+      WAREWULFCONF=/etc/warewulf/warewulf.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Rebuild overlays
+
+# ---------------------------------------------------------------------------
 # Node and profile definitions, derived from the node count.
 #
 # No node list exists in this repository. `lab_node_count` is the same
@@ -201,15 +301,14 @@
           | default({}, true))
          if (warewulf_server_nodes_file.content is defined) else {} }}
 
-- name: Point the default profile at the image and the identity overlay
+- name: Point the default profile at the image and the runtime overlays
   become: true
   when: not ansible_check_mode
   ansible.builtin.command:
     cmd: >-
       wwctl profile set -y default
       --image {{ warewulf_server_image_name }}
-      --runtime-overlays
-      hosts,ssh.authorized_keys,{{ warewulf_server_identity_overlay }}
+      --runtime-overlays {{ warewulf_server_runtime_overlays | join(',') }}
       --tagadd IPXEMenuEntry={{ warewulf_server_ipxe_method }}
   changed_when: false
 

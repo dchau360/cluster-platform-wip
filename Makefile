@@ -25,7 +25,7 @@ export N
 .PHONY: help up down down-hard demo nodes-up nodes-down status timings \
         systemd-install verify verify-isolation verify-idempotent \
         check-host-values lint lint-yaml lint-ansible lint-shell secrets \
-        tracked-secrets cold-start-check
+        tracked-secrets git-identity cold-start-check
 
 help: ## Show this help
 	@printf 'cluster-platform-wip\n\n'
@@ -85,13 +85,16 @@ need = @command -v $(1) >/dev/null 2>&1 || { \
 	  printf 'error: %s not found, so this gate cannot run.\n       %s\n' '$(1)' '$(2)' >&2; \
 	  exit 127; }
 
-lint: check-host-values secrets tracked-secrets lint-yaml lint-ansible lint-shell ## Run every repo gate
+lint: check-host-values secrets tracked-secrets git-identity lint-yaml lint-ansible lint-shell ## Run every repo gate
 
 check-host-values: ## Fail if any host-specific value is in a tracked file
 	@$(RUN) $(S)/check-no-host-values.sh
 
 tracked-secrets: ## Fail if a tracked file is named like key material or lab state
 	@$(RUN) $(S)/check-no-tracked-secrets.sh
+
+git-identity: ## Fail if key material ever existed in git history, not just the tip
+	@$(RUN) $(S)/check-no-identity-in-git.sh
 
 secrets: ## Run gitleaks over the worktree and the full history
 	$(call need,gitleaks,Install step is in docs/lab-host-setup.md.)

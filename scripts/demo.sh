@@ -3,13 +3,14 @@
 # `make demo N=<n>` — the one command that produces the measurement.
 #
 # Brings the platform up, starts N nodes, waits for each to take a DHCP
-# lease on the isolated segment, and prints the per-phase, per-node timing
-# table. The 1-to-N curve is a project deliverable, so the demo records it
-# every time rather than only when someone remembers to measure.
+# lease on the isolated segment, follows each node's serial console through
+# the boot phases to the login prompt, and prints the per-phase, per-node
+# timing table. The 1-to-N curve is a project deliverable, so the demo records
+# it every time rather than only when someone remembers to measure.
 #
-# At this stage the chain ends at the DHCP lease. The PXE, image and Slurm
-# tasks extend it by adding phases with the same phase_begin / phase_end
-# calls, and the table grows with them.
+# The console phases are observed live by scripts/lib/boot-phases.sh, which
+# nodes-up.sh starts in the background the moment it powers a node on. See
+# that file for the phase boundaries.
 
 export LAB_SCRIPT_NAME=demo
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
