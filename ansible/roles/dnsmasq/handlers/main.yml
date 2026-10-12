@@ -2,4 +2,4 @@
 - name: Restart dnsmasq
   become: true
   when: not ansible_check_mode
-  ansible.builtin.systemd_service: {name: dnsmasq, state: restarted}
+  ansible.builtin.systemd_service: {name: lab-dnsmasq, state: restarted}

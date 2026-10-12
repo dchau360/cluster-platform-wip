@@ -8,13 +8,6 @@
     src: render_dnsmasq.py
     dest: /usr/local/sbin/render-netbox-dnsmasq
     mode: "0755"
-- name: Configure provisioning-only dnsmasq
-  become: true
-  ansible.builtin.template:
-    src: cluster.conf.j2
-    dest: /etc/dnsmasq.d/cluster.conf
-    mode: "0644"
-  notify: Restart dnsmasq
 - name: Create dnsmasq and TFTP state directories
   become: true
   ansible.builtin.file:
@@ -35,11 +28,25 @@
     NETBOX_URL: http://127.0.0.1:8000
   changed_when: false
   notify: Restart dnsmasq
-- name: Enable dnsmasq
+- name: Point provisioning dnsmasq at NetBox reservations
+  become: true
+  ansible.builtin.lineinfile:
+    path: "{{ lab_state_dir }}/dnsmasq/lab.conf"
+    regexp: ^dhcp-hostsfile=
+    line: "dhcp-hostsfile={{ lab_state_dir }}/dnsmasq/netbox-hosts.conf"
+  notify: Restart dnsmasq
+- name: Keep the distribution dnsmasq disabled to prevent port conflicts
   become: true
   when: not ansible_check_mode
   ansible.builtin.systemd_service:
     name: dnsmasq
+    enabled: false
+    masked: true
+    state: stopped
+- name: Enable provisioning-only dnsmasq
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.systemd_service:
+    name: lab-dnsmasq
     enabled: true
-    masked: false
     state: started
