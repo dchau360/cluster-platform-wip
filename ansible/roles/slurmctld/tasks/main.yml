@@ -2,5 +2,6 @@
 - name: Install and enable Slurm controller
   become: true
   ansible.builtin.package: {name: slurmctld, state: present}
-- become: true
+- name: Enable and start Slurm controller
+  become: true
   ansible.builtin.systemd_service: {name: slurmctld, enabled: true, state: started}

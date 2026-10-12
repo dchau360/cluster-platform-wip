@@ -1,2 +1,2 @@
 ---
-platform_public_repository: https://github.com/example/cluster-platform.git
+git_mirror_public_repository: https://github.com/example/cluster-platform.git

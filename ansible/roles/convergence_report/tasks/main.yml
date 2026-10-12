@@ -8,8 +8,8 @@
     data:
       name: "{{ inventory_hostname }}"
       custom_fields:
-        last_git_sha: "{{ convergence_git_sha }}"
-        image_tag: "{{ convergence_image_tag }}"
-        convergence_result: "{{ convergence_result }}"
-        convergence_duration_seconds: "{{ convergence_duration_seconds }}"
+        last_git_sha: "{{ convergence_report_git_sha }}"
+        image_tag: "{{ convergence_report_image_tag }}"
+        convergence_result: "{{ convergence_report_result }}"
+        convergence_duration_seconds: "{{ convergence_report_duration_seconds }}"
     state: present

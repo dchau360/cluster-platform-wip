@@ -3,7 +3,7 @@ set -eu
 mirror=/srv/git/mirror/platform.git
 published=/srv/git/published/platform.git
 if [ ! -d "$mirror" ]; then
-  git clone --mirror '{{ platform_public_repository }}' "$mirror"
+  git clone --mirror '{{ git_mirror_public_repository }}' "$mirror"
 fi
 git -C "$mirror" remote update --prune
 test "$(git -C "$mirror" rev-parse --verify deployed^{commit})"

@@ -1,5 +1,5 @@
 ---
-convergence_git_sha: unknown
-convergence_image_tag: unknown
-convergence_result: success
-convergence_duration_seconds: 0
+convergence_report_git_sha: unknown
+convergence_report_image_tag: unknown
+convergence_report_result: success
+convergence_report_duration_seconds: 0
