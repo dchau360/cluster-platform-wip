@@ -22,7 +22,7 @@ set -u
 # key is the cluster-wide secret delivered by the cluster-identity runtime
 # overlay.
 IDENTITY_FILES=(
-  /etc/munge/munge.key
+  /etc/cluster-lab/munge.key
   /etc/ssh/ssh_host_ed25519_key
   /etc/ssh/ssh_host_ecdsa_key
   /etc/ssh/ssh_host_rsa_key
@@ -69,8 +69,8 @@ for priv in "${IDENTITY_FILES[@]}"; do
   ssh-keygen -l -f "$pub" || status=1
 done
 
-if [[ -r /etc/munge/munge.key ]]; then
-  digest="$(sha256sum /etc/munge/munge.key | awk '{print $1}')"
+if [[ -r /etc/cluster-lab/munge.key ]]; then
+  digest="$(sha256sum /etc/cluster-lab/munge.key | awk '{print $1}')"
   echo "munge-key sha256=${digest}"
 else
   echo "munge-key sha256=unreadable"

@@ -1,0 +1,42 @@
+---
+- name: Check the overlay delivered the cluster Munge key
+  ansible.builtin.stat:
+    path: "{{ munge_key_source }}"
+  register: munge_key_source_stat
+
+- name: Refuse to run without the cluster Munge key
+  ansible.builtin.assert:
+    that:
+      - munge_key_source_stat.stat.exists
+      - munge_key_source_stat.stat.size | int >= 32
+    fail_msg: >-
+      {{ munge_key_source }} is missing. It comes from the cluster-identity
+      Warewulf runtime overlay, never from git or the image.
+    quiet: true
+
+- name: Install the cluster Munge key for munged
+  ansible.builtin.copy:
+    src: "{{ munge_key_source }}"
+    dest: "{{ munge_key }}"
+    remote_src: true
+    owner: munge
+    group: munge
+    mode: "0400"
+  no_log: true
+  notify: Restart munge
+
+- name: Enable and start munge
+  ansible.builtin.systemd:
+    name: munge
+    enabled: true
+    state: started
+
+- name: Apply a key change before anything authenticates with it
+  ansible.builtin.meta: flush_handlers
+
+- name: Prove a credential round-trips through munged
+  when: not ansible_check_mode
+  ansible.builtin.shell:
+    cmd: set -o pipefail && munge -n | unmunge
+    executable: /bin/bash
+  changed_when: false

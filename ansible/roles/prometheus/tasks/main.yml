@@ -1,8 +1,45 @@
 ---
-- name: Install and enable Prometheus
+- name: Install Prometheus
   become: true
-  ansible.builtin.package: {name: prometheus, state: present}
+  ansible.builtin.apt:
+    name: prometheus
+    state: present
+
+- name: Create the rules directory
+  become: true
+  ansible.builtin.file:
+    path: /etc/prometheus/rules
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Render the convergence alert rules
+  become: true
+  ansible.builtin.template:
+    src: cluster-convergence.rules.yml.j2
+    dest: /etc/prometheus/rules/cluster-convergence.yml
+    owner: root
+    group: root
+    mode: "0644"
+    validate: promtool check rules %s
+  notify: Reload Prometheus
+
+- name: Render the Prometheus configuration
+  become: true
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: /etc/prometheus/prometheus.yml
+    owner: root
+    group: root
+    mode: "0644"
+    validate: promtool check config --syntax-only %s
+  notify: Reload Prometheus
+
 - name: Enable and start Prometheus
   become: true
   when: not ansible_check_mode
-  ansible.builtin.systemd_service: {name: prometheus, enabled: true, state: started}
+  ansible.builtin.systemd_service:
+    name: prometheus
+    enabled: true
+    state: started

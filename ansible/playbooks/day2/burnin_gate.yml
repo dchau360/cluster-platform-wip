@@ -1,0 +1,50 @@
+---
+# make burnin-gate — the acceptance gate, pushed from the head node.
+#
+# Reads every `staged` node's raw burn-in measurements from NetBox, judges
+# them against the thresholds below, and flips the status: `active` only when
+# every check passes, `failed` otherwise. The node is never asked anything;
+# the gate is independent of the node it judges. A node that became active
+# joins Slurm by the reconfigure at the end.
+- name: Burn-in acceptance gate
+  hosts: lab_control
+  gather_facts: true
+  vars_files: [../../group_vars/all.yml]
+  vars:
+    # Floors, not targets. Set well below what a healthy lab node measures
+    # (docs/node-self-configuration.md records the measured values), so the
+    # gate catches a degraded node rather than a slow day.
+    burnin_gate_min_cpu_bogo_ops_per_worker: >-
+      {{ lookup('env', 'BURNIN_MIN_CPU_BOGO_OPS_PER_WORKER') | default(20, true) }}
+    burnin_gate_min_disk_write_mib_s: "{{ lookup('env', 'BURNIN_MIN_DISK_WRITE_MIB_S') | default(20, true) }}"
+    burnin_gate_min_disk_read_mib_s: "{{ lookup('env', 'BURNIN_MIN_DISK_READ_MIB_S') | default(20, true) }}"
+  tasks:
+    - name: Read the NetBox token
+      ansible.builtin.import_tasks: tasks/netbox_token.yml
+
+    - name: Judge every staged node
+      ansible.builtin.script:
+        cmd: files/burnin_gate.py
+        executable: python3
+      environment:
+        NETBOX_TOKEN: "{{ netbox_runtime_token }}"
+        BURNIN_MIN_CPU_BOGO_OPS_PER_WORKER: "{{ burnin_gate_min_cpu_bogo_ops_per_worker }}"
+        BURNIN_MIN_DISK_WRITE_MIB_S: "{{ burnin_gate_min_disk_write_mib_s }}"
+        BURNIN_MIN_DISK_READ_MIB_S: "{{ burnin_gate_min_disk_read_mib_s }}"
+      register: burnin_gate_run
+      changed_when: >-
+        (burnin_gate_run.stdout | from_json).promoted | length > 0
+        or (burnin_gate_run.stdout | from_json).failed | length > 0
+
+    - name: Hold the verdicts
+      ansible.builtin.set_fact:
+        burnin_gate_summary: "{{ burnin_gate_run.stdout | from_json }}"
+
+    - name: Print the verdicts
+      ansible.builtin.debug:
+        var: burnin_gate_summary
+
+    - name: Add promoted nodes to Slurm
+      when: burnin_gate_summary.promoted | length > 0
+      ansible.builtin.include_role:
+        name: slurm_config

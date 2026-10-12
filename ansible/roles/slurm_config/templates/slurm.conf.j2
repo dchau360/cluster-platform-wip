@@ -1,0 +1,52 @@
+# {{ ansible_managed }}
+#
+# Rendered by the slurm_config role. Do not edit: every value below is from
+# NetBox (nodes, addresses, CPUs, memory, GPUs) or from lab/local.env (site
+# names and ports), and the next render replaces this file.
+#
+# Configless: SlurmctldParameters=enable_configless. Compute nodes run
+# `slurmd --conf-server` and fetch this file from slurmctld at start.
+ClusterName={{ lab_slurm_cluster_name }}
+SlurmctldHost={{ slurm_config_controller_host }}({{ lab_prov_gw }})
+SlurmctldPort={{ lab_slurmctld_port }}
+SlurmdPort={{ lab_slurmd_port }}
+SlurmctldParameters=enable_configless
+
+AuthType=auth/munge
+CredType=cred/munge
+SlurmUser=slurm
+SlurmdUser=root
+
+StateSaveLocation={{ slurm_config_state_dir }}
+SlurmdSpoolDir=/var/spool/slurmd
+SlurmctldLogFile={{ slurm_config_log_dir }}/slurmctld.log
+SlurmdLogFile={{ slurm_config_log_dir }}/slurmd.log
+
+ProctrackType=proctrack/cgroup
+TaskPlugin=task/cgroup,task/affinity
+SelectType=select/cons_tres
+SelectTypeParameters=CR_Core_Memory
+TopologyPlugin=topology/tree
+{% if slurm_config_model.gres %}
+GresTypes=gpu
+{% endif %}
+
+# A node that was down comes back on its own once it registers with a valid
+# configuration; the day-2 plays drain and resume explicitly.
+ReturnToService=2
+SlurmdTimeout=120
+MinJobAge=300
+
+# The rolling-update drill's "no job loss" evidence: every job's final state.
+JobCompType=jobcomp/filetxt
+JobCompLoc={{ slurm_config_jobcomp_log }}
+AccountingStorageType=accounting_storage/none
+
+# --- nodes: NetBox, status=active, role=compute -----------------------------
+{% for node in slurm_config_model.nodes %}
+NodeName={{ node.name }} NodeAddr={{ node.addr }} CPUs={{ node.cpus }} RealMemory={{ node.real_memory }}{% if node.gpus %} Gres=gpu:{{ node.gpus }}{% endif %} State=UNKNOWN
+{% endfor %}
+{% if slurm_config_model.nodes %}
+
+PartitionName={{ lab_slurm_partition }} Nodes={{ slurm_config_model.nodes | map(attribute='name') | join(',') }} Default=YES MaxTime=INFINITE State=UP
+{% endif %}

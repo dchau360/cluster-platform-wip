@@ -1,0 +1,8 @@
+---
+# Where the node's facts come from. On a node, the head-node API, whose URL
+# the pull wrapper exports from the Warewulf-delivered /etc/cluster-pull/pull.env.
+# In CI and Molecule, a fixture file: the same document, no network.
+node_facts_api: "{{ lookup('env', 'CLUSTER_NODE_API') }}"
+node_facts_file: "{{ lookup('env', 'CLUSTER_NODE_FACTS_FILE') }}"
+node_facts_cache: /var/cache/cluster-node/facts.json
+node_facts_schema: 1

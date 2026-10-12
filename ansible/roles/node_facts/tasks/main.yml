@@ -1,0 +1,62 @@
+---
+# Fetched once per run and cached locally. Every later role reads
+# `node_facts`; none of them calls an API per task.
+- name: Require a facts source
+  ansible.builtin.assert:
+    that:
+      - (node_facts_api | length > 0) or (node_facts_file | length > 0)
+    fail_msg: >-
+      No facts source. A node gets CLUSTER_NODE_API from /etc/cluster-pull/pull.env
+      (Warewulf overlay); CI and Molecule set CLUSTER_NODE_FACTS_FILE.
+    quiet: true
+
+- name: Fetch this node's record from the head-node API
+  when: node_facts_file | length == 0
+  ansible.builtin.uri:
+    url: "{{ node_facts_api }}/v1/self"
+    return_content: true
+    timeout: 15
+  check_mode: false
+  register: node_facts_response
+
+- name: Read the facts fixture
+  when: node_facts_file | length > 0
+  ansible.builtin.slurp:
+    src: "{{ node_facts_file }}"
+  register: node_facts_fixture
+
+- name: Hold the facts for this run
+  ansible.builtin.set_fact:
+    node_facts: >-
+      {{ node_facts_response.json
+         if (node_facts_file | length == 0)
+         else (node_facts_fixture.content | b64decode | from_json) }}
+
+- name: Refuse facts this play does not understand
+  ansible.builtin.assert:
+    that:
+      - node_facts.schema | int == node_facts_schema | int
+      - node_facts.hostname | default('', true) | length > 0
+      - node_facts.device.status in ['planned', 'staged', 'active', 'failed', 'offline', 'decommissioning']
+      - node_facts.controller.address | length > 0
+    fail_msg: >-
+      The facts document is not schema {{ node_facts_schema }}, or the NetBox
+      record has no hostname (dns_name on the provisioning address). Nothing
+      has been changed on this node.
+    quiet: true
+
+- name: Create the facts cache directory
+  ansible.builtin.file:
+    path: "{{ node_facts_cache | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Cache the facts for this run and for a human reading the node
+  ansible.builtin.copy:
+    content: "{{ node_facts | to_nice_json }}\n"
+    dest: "{{ node_facts_cache }}"
+    owner: root
+    group: root
+    mode: "0644"

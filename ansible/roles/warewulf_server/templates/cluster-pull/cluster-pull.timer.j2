@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Re-run node self-configuration, splayed across the fleet
+
+[Timer]
+# Measured from the end of the previous run, so a slow run never overlaps.
+OnUnitInactiveSec={{ lab_pull_interval }}
+# Splay: N nodes must not hit the mirror and the node API in the same second.
+RandomizedDelaySec={{ lab_pull_splay }}
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

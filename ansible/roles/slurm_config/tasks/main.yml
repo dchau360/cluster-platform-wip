@@ -1,0 +1,65 @@
+---
+- name: Install the Slurm model renderer
+  become: true
+  ansible.builtin.copy:
+    src: render_slurm.py
+    dest: "{{ slurm_config_renderer }}"
+    owner: root
+    group: root
+    mode: "0755"
+
+# site.yml's netbox role sets the token; a day-2 play that runs this role on
+# its own reads it the same way.
+- name: Read the NetBox runtime environment
+  when: netbox_runtime_token is not defined
+  become: true
+  ansible.builtin.slurp:
+    src: /etc/cluster-lab/netbox.env
+  register: slurm_config_netbox_env
+  no_log: true
+
+- name: Derive the NetBox token
+  when: netbox_runtime_token is not defined
+  ansible.builtin.set_fact:
+    netbox_runtime_token: >-
+      nbt_{{ (slurm_config_netbox_env.content | b64decode
+              | regex_search('(?m)^SUPERUSER_API_KEY=(.+)$', '\1')).0
+      }}.{{ (slurm_config_netbox_env.content | b64decode
+             | regex_search('(?m)^SUPERUSER_API_TOKEN=(.+)$', '\1')).0 }}
+  no_log: true
+
+- name: Read the cluster from NetBox
+  become: true
+  ansible.builtin.command:
+    cmd: "{{ slurm_config_renderer }}"
+  environment:
+    NETBOX_URL: "{{ slurm_config_netbox_url }}"
+    NETBOX_TOKEN: "{{ netbox_runtime_token }}"
+    SLURM_MEM_RESERVE_MIB: "{{ lab_slurm_mem_reserve_mib }}"
+  register: slurm_config_render
+  changed_when: false
+  check_mode: false
+
+- name: Hold the model
+  ansible.builtin.set_fact:
+    slurm_config_model: "{{ slurm_config_render.stdout | from_json }}"
+
+- name: Create the Slurm configuration directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ slurm_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Render the controller's Slurm configuration
+  become: true
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ slurm_config_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ slurm_config_files }}"
+  notify: Reconfigure Slurm

@@ -1,0 +1,5 @@
+# {{ ansible_managed }}
+# Read by slurmd.service (EnvironmentFile=-/etc/sysconfig/slurmd).
+# Configless: slurmd fetches slurm.conf, cgroup.conf, gres.conf and
+# topology.conf from slurmctld at start, into /run/slurm/conf.
+SLURMD_OPTIONS="--conf-server {{ slurm_compute_conf_server }}"

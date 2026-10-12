@@ -1,0 +1,28 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Cluster node API: a node's only, credential-free door to NetBox
+Documentation=https://github.com/dchau360/cluster-platform-wip/blob/main/docs/node-self-configuration.md
+# Bound to the provisioning address, which lab-net.service creates.
+After=network-online.target lab-net.service cluster-netbox.service
+Wants=network-online.target
+Requires=lab-net.service
+
+[Service]
+Environment=NODE_API_BIND={{ node_api_bind }}
+Environment=NODE_API_PORT={{ node_api_port }}
+Environment=NODE_API_ROLE={{ node_api_role_slug }}
+Environment=NODE_API_CONTROLLER_ADDRESS={{ lab_prov_gw }}
+Environment=NODE_API_SLURMCTLD_PORT={{ lab_slurmctld_port }}
+Environment=NODE_API_NODE_EXPORTER_PORT={{ lab_node_exporter_port }}
+Environment=NODE_API_NETBOX_ENV={{ node_api_netbox_env }}
+ExecStart=/usr/bin/python3 /usr/local/sbin/cluster-node-api
+Restart=on-failure
+RestartSec=5
+# The token file is root-only; nothing else here needs privilege.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=lab.target multi-user.target

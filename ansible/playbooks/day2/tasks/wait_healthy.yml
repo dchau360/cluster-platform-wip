@@ -1,0 +1,65 @@
+---
+# Healthy means all of: the node pulled and converged *after* the reboot, it
+# reports the expected image tag, the run succeeded, and slurmd is responding.
+# A failed pull ends the wait at once rather than at the timeout.
+- name: Start the healthy clock
+  ansible.builtin.set_fact:
+    rolling_t2: "{{ now(utc=true).timestamp() }}"
+
+- name: "Find {{ rolling_node }}'s NetBox device"
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:8000/api/ipam/ip-addresses/?dns_name={{ rolling_node }}.{{ lab_prov_domain }}"
+    headers:
+      Authorization: "Token {{ netbox_runtime_token }}"
+  register: rolling_ip
+  no_log: true
+
+- name: Hold the device id
+  ansible.builtin.set_fact:
+    rolling_device_id: "{{ rolling_ip.json.results[0].assigned_object.device.id }}"
+
+- name: "Wait for {{ rolling_node }} to converge on {{ rolling_expect_tag }}"
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:8000/api/dcim/devices/{{ rolling_device_id }}/"
+    headers:
+      Authorization: "Token {{ netbox_runtime_token }}"
+  register: rolling_device
+  until: >-
+    (rolling_device.json.custom_fields.last_converged_at | default('', true)) > rolling_reboot_at
+  retries: "{{ (rolling_healthy_timeout | int / 10) | int }}"
+  delay: 10
+  no_log: true
+
+- name: Judge the first run after the reboot
+  ansible.builtin.assert:
+    that:
+      - rolling_device.json.custom_fields.convergence_result == 'success'
+      - rolling_device.json.custom_fields.image_tag == rolling_expect_tag
+    fail_msg: >-
+      {{ rolling_node }} converged with result
+      {{ rolling_device.json.custom_fields.convergence_result }} on image
+      {{ rolling_device.json.custom_fields.image_tag }} (expected {{ rolling_expect_tag }});
+      failed task: {{ rolling_device.json.custom_fields.convergence_failed_task | default('') }}
+    quiet: true
+
+# SlurmdStartTime later than the reboot proves this is the slurmd of the new
+# boot registering, not the controller's memory of the old one.
+- name: "Wait for the new boot's slurmd on {{ rolling_node }} to register"
+  ansible.builtin.command:
+    cmd: scontrol show node {{ rolling_node }}
+  register: rolling_slurm_node
+  until:
+    - "'NOT_RESPONDING' not in rolling_slurm_node.stdout"
+    - >-
+      (rolling_slurm_node.stdout | regex_search('SlurmdStartTime=(\\S+)', '\\1') | default([''], true) | first)
+      > rolling_reboot_local
+  retries: 30
+  delay: 5
+  changed_when: false
+
+- name: Record the convergence
+  ansible.builtin.include_tasks: record_phase.yml
+  vars:
+    day2_phase: rolling-healthy
+    day2_phase_node: "{{ rolling_node }}"
+    day2_phase_start: "{{ rolling_t2 }}"

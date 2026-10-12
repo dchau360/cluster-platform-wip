@@ -23,18 +23,132 @@ def normalize(value):
         return text
 
 
-def ensure(endpoint, lookup, values):
+def ensure(endpoint, lookup, values, create_only=None):
+    """Create or reconcile one object.
+
+    `create_only` holds values written when the object is created and never
+    compared afterwards. A device's status is the example: the seeder creates
+    a node `staged`, and from then on the burn-in gate owns the field. A
+    seeder that reset it on every converge would undo the gate's verdict.
+    """
     obj = endpoint.get(**lookup)
     if obj is None:
-        endpoint.create(values)
+        endpoint.create({**values, **(create_only or {})})
         return 1
-    ignored = {"site", "rack", "device_type", "role", "manufacturer", "device", "object_types", "assigned_object_type", "assigned_object_id"}
+    ignored = {"site", "rack", "device_type", "role", "manufacturer", "device", "object_types", "assigned_object_type", "assigned_object_id", "primary_mac_address"}
     changed = any(normalize(getattr(obj, key, "")) != normalize(value)
                   for key, value in values.items() if key not in ignored)
     if changed:
         obj.update(values)
         return 1
     return 0
+
+
+def node_mac(index):
+    """The MAC the harness gives node `index` (scripts/lib/common.sh node_mac).
+
+    One formula, three readers: the harness that creates the VM, Warewulf's
+    node definition, and this record. A record carrying a different MAC is a
+    record the node can never be matched to.
+    """
+    oui = os.getenv("PROV_MAC_OUI") or "52:54:00"
+    return f"{oui}:{(index >> 16) & 0xff:02x}:{(index >> 8) & 0xff:02x}:{index & 0xff:02x}".upper()
+
+
+def ensure_primary_mac(nb, interface, mac):
+    """Make `mac` the interface's primary MAC, keeping any others as history.
+
+    NetBox 4.2+ models MACs as objects; an interface's `mac_address` is its
+    primary one and is read-only. The NIC-swap drill adds MACs to the same
+    interface on purpose, so the others are left alone.
+    """
+    changes = 0
+    obj = nb.dcim.mac_addresses.get(mac_address=mac, assigned_object_type="dcim.interface",
+                                    assigned_object_id=interface.id)
+    if obj is None:
+        obj = nb.dcim.mac_addresses.create({"mac_address": mac, "assigned_object_type": "dcim.interface",
+                                            "assigned_object_id": interface.id})
+        changes += 1
+    current = getattr(interface, "primary_mac_address", None)
+    if current is None or current.id != obj.id:
+        interface.update({"primary_mac_address": obj.id})
+        changes += 1
+    return changes
+
+
+def ensure_device(nb, name, site, rack, position, role, dtype):
+    values = {"name": name, "site": site.id, "rack": rack.id, "position": position, "face": "front",
+              "role": role.id, "device_type": dtype.id}
+    changes = ensure(nb.dcim.devices, {"name": name}, values, create_only={"status": "active"})
+    return changes, nb.dcim.devices.get(name=name)
+
+
+def ensure_interface(nb, device, name):
+    changes = ensure(nb.dcim.interfaces, {"device_id": device.id, "name": name},
+                     {"device": device.id, "name": name, "type": "1000base-t"})
+    return changes, nb.dcim.interfaces.get(device_id=device.id, name=name)
+
+
+def ensure_cable(nb, a, b):
+    """Cable interface `a` to interface `b`, replacing a cable to anything else."""
+    peers = [getattr(p, "id", None) for p in (getattr(a, "link_peers", None) or [])]
+    if a.cable is not None and peers == [b.id]:
+        return 0
+    for end in (a, b):
+        if end.cable is not None:
+            nb.dcim.cables.get(end.cable.id).delete()
+    nb.dcim.cables.create({
+        "a_terminations": [{"object_type": "dcim.interface", "object_id": a.id}],
+        "b_terminations": [{"object_type": "dcim.interface", "object_id": b.id}],
+        "status": "connected",
+    })
+    return 1
+
+
+def ensure_fabric(nb, definition, site, node_count):
+    """One leaf switch per rack, every leaf uplinked to one spine.
+
+    This is the cabling Slurm's topology.conf is rendered from. The lab's
+    nodes share one Linux bridge, so the fabric is synthetic, but it is real
+    NetBox data: the renderer walks cables, not names, so a node recabled to
+    another leaf moves in topology.conf with no code change.
+    """
+    fabric = definition.get("fabric")
+    if not fabric:
+        return 0
+    changes = 0
+    role = fabric["switch_role"]
+    changes += ensure(nb.dcim.device_roles, {"slug": role["slug"]}, {**role, "color": "2196f3"})
+    role_obj = nb.dcim.device_roles.get(slug=role["slug"])
+    manufacturer = nb.dcim.manufacturers.get(slug="synthetic-lab")
+    stype = fabric["switch_type"]
+    changes += ensure(nb.dcim.device_types, {"slug": stype["slug"]},
+                      {"model": stype["model"], "slug": stype["slug"], "manufacturer": manufacturer.id, "u_height": 1})
+    stype_obj = nb.dcim.device_types.get(slug=stype["slug"])
+    racks = [nb.dcim.racks.get(name=r["name"], site_id=site.id) for r in definition["racks"]]
+    first = racks[0]
+    delta, spine = ensure_device(nb, fabric["spine"], site, first, first.u_height - 1, role_obj, stype_obj)
+    changes += delta
+    for rack_index, rack in enumerate(racks, start=1):
+        delta, leaf = ensure_device(nb, f"{fabric['leaf_prefix']}{rack.name}", site, rack, rack.u_height,
+                                    role_obj, stype_obj)
+        changes += delta
+        delta, uplink = ensure_interface(nb, leaf, "uplink1")
+        changes += delta
+        delta, spine_port = ensure_interface(nb, spine, f"swp{rack_index}")
+        changes += delta
+        changes += ensure_cable(nb, uplink, spine_port)
+    # Nodes are cabled to the leaf in their own rack, port = rack position.
+    for index in range(1, node_count + 1):
+        device = nb.dcim.devices.get(name=f"{first.name}-u{index:02d}")
+        if device is None or device.rack is None:
+            continue
+        leaf = nb.dcim.devices.get(name=f"{fabric['leaf_prefix']}{device.rack.name}")
+        node_port = nb.dcim.interfaces.get(device_id=device.id, name=fabric["node_interface"])
+        delta, leaf_port = ensure_interface(nb, leaf, f"swp{int(device.position)}")
+        changes += delta
+        changes += ensure_cable(nb, node_port, leaf_port)
+    return changes
 
 
 def main():
@@ -73,24 +187,38 @@ def main():
         # writers retain the typed semantics in their values. `object_types`
         # defaults to the device, because that is where convergence lands;
         # a field that belongs on an interface (the IB GUID) says so.
-        values = {"name": field["name"], "label": field["name"].replace("_", " ").title(), "type": "text", "object_types": field.get("object_types", ["dcim.device"]), "required": False}
+        # `netbox_type` overrides that for a field whose value is structured
+        # data NetBox should store as such: the burn-in results are JSON so
+        # the gate reads numbers, not a string it has to re-parse.
+        values = {"name": field["name"], "label": field["name"].replace("_", " ").title(), "type": field.get("netbox_type", "text"), "object_types": field.get("object_types", ["dcim.device"]), "required": False}
         changes += ensure(nb.extras.custom_fields, {"name": field["name"]}, values)
     rack = nb.dcim.racks.get(name=definition["racks"][0]["name"], site_id=site_obj.id)
     role_obj = nb.dcim.device_roles.get(slug=role["slug"])
     dtype_obj = nb.dcim.device_types.get(slug=dtype["slug"])
+    prefix = os.getenv("NODE_NAME_PREFIX") or "cn"
+    domain = os.getenv("PROV_DOMAIN") or "lab.internal"
     for index in range(1, args.nodes + 1):
         # Host identity is rack position; MAC replacement cannot rename it.
         hostname = f"{rack.name}-u{index:02d}"
-        changes += ensure(nb.dcim.devices, {"name": hostname}, {"name": hostname, "site": site_obj.id, "rack": rack.id, "position": index, "face": "front", "role": role_obj.id, "device_type": dtype_obj.id, "status": "active"})
+        changes += ensure(nb.dcim.devices, {"name": hostname},
+                          {"name": hostname, "site": site_obj.id, "rack": rack.id, "position": index, "face": "front", "role": role_obj.id, "device_type": dtype_obj.id},
+                          create_only={"status": definition.get("new_device_status", "staged")})
         device = nb.dcim.devices.get(name=hostname)
-        changes += ensure(nb.dcim.interfaces, {"device_id": device.id, "name": "provisioning"}, {"device": device.id, "name": "provisioning", "type": "1000base-t", "mac_address": f"02:00:00:42:{index // 256:02x}:{index % 256:02x}"})
+        changes += ensure(nb.dcim.interfaces, {"device_id": device.id, "name": "provisioning"}, {"device": device.id, "name": "provisioning", "type": "1000base-t"})
         interface = nb.dcim.interfaces.get(device_id=device.id, name="provisioning")
+        changes += ensure_primary_mac(nb, interface, node_mac(index))
         for network_name, cidr in definition["prefixes"].items():
             address = str(ipaddress.ip_network(cidr)[19 + index]) + "/" + cidr.split("/")[1]
             values = {"address": address, "status": "active", "description": f"{network_name} for {hostname}"}
             if network_name == "provisioning":
-                values.update({"assigned_object_type": "dcim.interface", "assigned_object_id": interface.id})
+                # The OS hostname is a property of the address the node holds,
+                # which is where DNS would put it. The device name stays the
+                # rack position; this is the one link between the two
+                # namespaces, and the Slurm NodeName is read from it.
+                values.update({"assigned_object_type": "dcim.interface", "assigned_object_id": interface.id,
+                               "dns_name": f"{prefix}{index:02d}.{domain}"})
             changes += ensure(nb.ipam.ip_addresses, {"address": address}, values)
+    changes += ensure_fabric(nb, definition, site_obj, args.nodes)
     print(f"changed={changes}")
 
 

@@ -1,0 +1,68 @@
+---
+# ---------------------------------------------------------------------------
+# The cluster-pull runtime overlay: how a node configures itself (SRE-7).
+#
+# Everything a node needs before it has pulled anything: the wrapper, the
+# boot unit, the splayed timer, and where to pull from. No secret: the mirror
+# is read-only HTTP on the isolated segment and the node API needs none. The
+# playbook itself is NOT here; it is pulled from the pinned `deployed` ref.
+# ---------------------------------------------------------------------------
+
+- name: Create the cluster-pull overlay tree
+  become: true
+  ansible.builtin.file:
+    path: "{{ warewulf_server_overlay_dir }}/{{ warewulf_server_pull_overlay }}/rootfs/{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - usr/local/sbin
+    - etc/cluster-pull
+    - etc/systemd/system/multi-user.target.wants
+    - etc/systemd/system/timers.target.wants
+  notify: Rebuild overlays
+
+- name: Install the pull wrapper in the overlay
+  become: true
+  ansible.builtin.copy:
+    src: cluster-pull/cluster-pull.sh
+    dest: "{{ warewulf_server_overlay_dir }}/{{ warewulf_server_pull_overlay }}/rootfs/usr/local/sbin/cluster-pull"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Rebuild overlays
+
+- name: Render the pull environment, unit and timer into the overlay
+  become: true
+  ansible.builtin.template:
+    src: "cluster-pull/{{ item.src }}"
+    dest: "{{ warewulf_server_overlay_dir }}/{{ warewulf_server_pull_overlay }}/rootfs/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - {src: pull.env.j2, dest: etc/cluster-pull/pull.env}
+    - {src: cluster-pull.service.j2, dest: etc/systemd/system/cluster-pull.service}
+    - {src: cluster-pull.timer.j2, dest: etc/systemd/system/cluster-pull.timer}
+  loop_control:
+    label: "{{ item.dest }}"
+  notify: Rebuild overlays
+
+# The boot run is immediate (multi-user.target), the repeats are splayed
+# (timers.target).
+- name: Enable the boot run and the timer in the overlay
+  become: true
+  ansible.builtin.file:
+    src: "../{{ item.unit }}"
+    dest: >-
+      {{ warewulf_server_overlay_dir }}/{{ warewulf_server_pull_overlay
+         }}/rootfs/etc/systemd/system/{{ item.target }}.wants/{{ item.unit }}
+    state: link
+    force: true
+  loop:
+    - {unit: cluster-pull.service, target: multi-user.target}
+    - {unit: cluster-pull.timer, target: timers.target}
+  loop_control:
+    label: "{{ item.target }} -> {{ item.unit }}"
+  notify: Rebuild overlays

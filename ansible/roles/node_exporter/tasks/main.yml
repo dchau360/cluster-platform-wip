@@ -1,0 +1,12 @@
+---
+- name: Enable and start node_exporter
+  ansible.builtin.systemd:
+    name: "{{ node_exporter_service }}"
+    enabled: true
+    state: started
+
+- name: Wait for node_exporter to listen
+  when: not ansible_check_mode
+  ansible.builtin.wait_for:
+    port: "{{ node_exporter_port | int }}"
+    timeout: 30

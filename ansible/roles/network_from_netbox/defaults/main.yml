@@ -1,0 +1,2 @@
+---
+network_from_netbox_connection_dir: /etc/NetworkManager/system-connections

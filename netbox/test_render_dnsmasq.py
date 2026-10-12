@@ -77,5 +77,23 @@ class RenderEntriesTest(unittest.TestCase):
                          render_dnsmasq.render_entries([entry]))
 
 
+class EntryHostnameTest(unittest.TestCase):
+    """The DHCP hostname is the address's DNS name, not the rack position."""
+
+    class _Obj:
+        def __init__(self, **kw):
+            self.__dict__.update(kw)
+
+    def test_dns_name_wins_over_the_device_name(self):
+        address = self._Obj(dns_name="cn01.lab.internal")
+        device = self._Obj(name="rack-a-u01")
+        self.assertEqual(render_dnsmasq.entry_hostname(address, device), "cn01")
+
+    def test_no_dns_name_falls_back_to_the_device_name(self):
+        address = self._Obj(dns_name="")
+        device = self._Obj(name="rack-a-u01")
+        self.assertEqual(render_dnsmasq.entry_hostname(address, device), "rack-a-u01")
+
+
 if __name__ == "__main__":
     unittest.main()

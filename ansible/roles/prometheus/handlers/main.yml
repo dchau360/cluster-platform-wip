@@ -1,0 +1,7 @@
+---
+- name: Reload Prometheus
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.systemd_service:
+    name: prometheus
+    state: reloaded

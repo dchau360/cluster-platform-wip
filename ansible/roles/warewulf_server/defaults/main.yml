@@ -165,6 +165,11 @@ warewulf_server_runtime_overlays:
   - ssh.authorized_keys
   - "{{ warewulf_server_identity_overlay }}"
   - "{{ warewulf_server_wwclient_overlay }}"
+  - "{{ warewulf_server_pull_overlay }}"
+
+# How a node configures itself: the ansible-pull wrapper, unit, timer and
+# pull.env. See tasks/pull_overlay.yml.
+warewulf_server_pull_overlay: cluster-pull
 
 # Node addressing, mirroring scripts/lib/common.sh. Values, not formulas:
 # the formula stays in one place and these are derived from the same

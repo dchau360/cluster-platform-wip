@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+[Unit]
+# Retry for as long as it takes: a node can boot before its controller.
+StartLimitIntervalSec=0
+Requires=munge.service
+After=munge.service
+
+[Service]
+Restart=always
+RestartSec={{ slurm_compute_restart_sec }}

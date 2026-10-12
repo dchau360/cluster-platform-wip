@@ -1,0 +1,8 @@
+---
+- name: Restart cluster-node-api
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.systemd_service:
+    name: cluster-node-api
+    state: restarted
+    daemon_reload: true

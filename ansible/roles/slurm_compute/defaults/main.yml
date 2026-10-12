@@ -1,0 +1,22 @@
+---
+# Configless Slurm: slurmd asks slurmctld for its configuration at start.
+# The controller address and port come from the node's facts (the head node
+# serves them from local.env), never from a file on the node.
+slurm_compute_conf_server: >-
+  {{ node_facts.controller.address }}:{{ node_facts.controller.slurmctld_port }}
+
+# slurmd only runs on a node NetBox calls `active`. A `staged` node is in
+# burn-in and must not take jobs; the burn-in gate flips it.
+slurm_compute_enabled: "{{ node_facts.device.status == 'active' }}"
+
+# Retry forever, every RestartSec, when the controller is unreachable at
+# start. A node that boots while slurmctld is down must join when it returns.
+slurm_compute_restart_sec: 10
+
+# Files that must never exist on a compute node. Their presence means someone
+# pushed configuration to a node, which is O(N) and is what configless avoids.
+slurm_compute_forbidden_files:
+  - /etc/slurm/slurm.conf
+  - /etc/slurm/cgroup.conf
+  - /etc/slurm/gres.conf
+  - /etc/slurm/topology.conf

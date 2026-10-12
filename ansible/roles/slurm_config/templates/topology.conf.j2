@@ -1,0 +1,7 @@
+# {{ ansible_managed }}
+# Rendered by the slurm_config role from NetBox cabling: each node's
+# provisioning interface to its leaf, each leaf's uplink to the spine.
+{% for switch in slurm_config_model.switches %}
+SwitchName={{ switch.name }}{% if switch.nodes %} Nodes={{ switch.nodes | join(',') }}{% endif %}{% if switch.switches %} Switches={{ switch.switches | join(',') }}{% endif %}
+
+{% endfor %}

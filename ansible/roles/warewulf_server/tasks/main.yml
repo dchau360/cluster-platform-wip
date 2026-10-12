@@ -273,7 +273,7 @@
   ansible.builtin.file:
     path: >-
       {{ warewulf_server_overlay_dir }}/{{ warewulf_server_identity_overlay
-         }}/rootfs/etc/munge
+         }}/rootfs/etc/cluster-lab
     state: directory
     owner: root
     group: root
@@ -299,16 +299,42 @@
     mode: "0755"
   notify: Rebuild overlays
 
+# A template, rendered per node from the `image_reference` tag. The profile
+# carries the default (set below); a rolling image update overrides it on one
+# node at a time, so each node reports the image it actually booted.
+- name: Remove the static image reference
+  become: true
+  ansible.builtin.file:
+    path: >-
+      {{ warewulf_server_overlay_dir }}/{{ warewulf_server_identity_overlay
+         }}/rootfs/etc/cluster-lab/image-reference
+    state: absent
+  notify: Rebuild overlays
+
 - name: Record the image reference the node was provisioned from
   become: true
   ansible.builtin.copy:
     dest: >-
       {{ warewulf_server_overlay_dir }}/{{ warewulf_server_identity_overlay
-         }}/rootfs/etc/cluster-lab/image-reference
-    content: "{{ warewulf_server_image_uri }}\n"
+         }}/rootfs/etc/cluster-lab/image-reference.ww
+    content: |
+      {{ '{{' }} index .Tags "image_reference" {{ '}}' }}
     owner: root
     group: root
     mode: "0644"
+  notify: Rebuild overlays
+
+# Delivered beside the image reference, not at /etc/munge/munge.key. munged
+# refuses a key it does not own, and wwclient re-lays overlay files with the
+# overlay's ownership on every refresh; the node's munge role copies the key
+# into place with the node's own munge user. See ansible/roles/munge.
+- name: Remove the Munge key from its pre-SRE-7 overlay path
+  become: true
+  ansible.builtin.file:
+    path: >-
+      {{ warewulf_server_overlay_dir }}/{{ warewulf_server_identity_overlay
+         }}/rootfs/etc/munge
+    state: absent
   notify: Rebuild overlays
 
 - name: Deliver the Munge key through the overlay
@@ -317,7 +343,7 @@
     src: "{{ warewulf_server_munge_key }}"
     dest: >-
       {{ warewulf_server_overlay_dir }}/{{ warewulf_server_identity_overlay
-         }}/rootfs/etc/munge/munge.key
+         }}/rootfs/etc/cluster-lab/munge.key
     remote_src: true
     owner: root
     group: root
@@ -424,6 +450,9 @@
     mode: "0644"
   notify: Rebuild overlays
 
+- name: Build the cluster-pull overlay
+  ansible.builtin.import_tasks: pull_overlay.yml
+
 # ---------------------------------------------------------------------------
 # Node and profile definitions, derived from the node count.
 #
@@ -455,6 +484,7 @@
       --kernelargs {{ warewulf_server_kernel_args }}
       --runtime-overlays {{ warewulf_server_runtime_overlays | join(',') }}
       --tagadd IPXEMenuEntry={{ warewulf_server_ipxe_method }}
+      --tagadd image_reference={{ warewulf_server_image_uri }}
   changed_when: false
 
 - name: Define every node from the node count

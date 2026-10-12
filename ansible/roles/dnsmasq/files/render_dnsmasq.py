@@ -45,6 +45,19 @@ def render_entries(entries):
     return sorted(set(lines))
 
 
+def entry_hostname(address, device):
+    """The OS hostname for a reservation.
+
+    The address's DNS name is the node's hostname (`cn01`); the device name is
+    its rack position (`rack-a-u01`). DHCP hands out the hostname. An address
+    with no DNS name falls back to the device name, as before.
+    """
+    dns_name = (getattr(address, "dns_name", None) or "").strip()
+    if dns_name:
+        return dns_name.split(".")[0]
+    return getattr(device, "name", None)
+
+
 def netbox_entries(nb):
     """Every addressed interface, as a reservation entry."""
     entries = []
@@ -56,7 +69,7 @@ def netbox_entries(nb):
         device = getattr(interface, "device", None)
         custom = getattr(interface, "custom_fields", None) or {}
         entries.append({
-            "hostname": getattr(device, "name", None),
+            "hostname": entry_hostname(addresses[0], device),
             "ip": ip,
             # Only the provisioning interface keys on MAC. An IB interface
             # may report no 6-byte MAC at all, and a second MAC-keyed

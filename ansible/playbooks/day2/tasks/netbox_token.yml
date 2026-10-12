@@ -1,0 +1,18 @@
+---
+- name: Read the NetBox runtime environment
+  when: netbox_runtime_token is not defined
+  become: true
+  ansible.builtin.slurp:
+    src: /etc/cluster-lab/netbox.env
+  register: day2_netbox_env
+  no_log: true
+
+- name: Derive the NetBox token
+  when: netbox_runtime_token is not defined
+  ansible.builtin.set_fact:
+    netbox_runtime_token: >-
+      nbt_{{ (day2_netbox_env.content | b64decode
+              | regex_search('(?m)^SUPERUSER_API_KEY=(.+)$', '\1')).0
+      }}.{{ (day2_netbox_env.content | b64decode
+             | regex_search('(?m)^SUPERUSER_API_TOKEN=(.+)$', '\1')).0 }}
+  no_log: true

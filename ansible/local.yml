@@ -1,0 +1,87 @@
+---
+# local.yml — what a compute node runs on itself.
+#
+# Invoked by `ansible-pull` from the cluster-pull unit the cluster-pull
+# Warewulf overlay delivers: once immediately at boot, then on a splayed
+# timer. It pulls the pinned `deployed` ref from the head node's mirror, never
+# `main`. The node has no inbound SSH and holds no credential: it reads its own
+# NetBox record and writes back its result through the head-node API, which
+# identifies it by its address on the isolated provisioning segment.
+#
+# The roles below are node-local by construction: no `delegate_to`, and no
+# other host's `hostvars`. scripts/check-node-roles-are-local.sh fails CI if
+# either appears. That one constraint is what lets the same roles run under
+# ansible-pull here and under a pushed play from the head node.
+#
+# Half-applying is the failure to avoid. Facts are fetched first; if that
+# fails, nothing has been touched. Any later failure is caught, reported to
+# NetBox as `failed` with the task that failed, and the run still exits
+# non-zero so the unit shows it.
+- name: Configure this node from its own NetBox record
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  become: false
+  vars:
+    cluster_image_reference_file: /etc/cluster-lab/image-reference
+  tasks:
+    # set_fact, not a play var: a play var is evaluated lazily, so `now()`
+    # there would be read at report time and every duration would be zero.
+    - name: Note when the play started
+      ansible.builtin.set_fact:
+        cluster_play_started: "{{ now(utc=true).timestamp() }}"
+
+    - name: Read the image reference this node was provisioned from
+      ansible.builtin.slurp:
+        src: "{{ cluster_image_reference_file }}"
+      register: cluster_image_reference
+      failed_when: false
+
+    - name: Derive the image tag
+      ansible.builtin.set_fact:
+        cluster_image_tag: >-
+          {{ ((cluster_image_reference.content | default('') | b64decode | trim)
+              | regex_replace('^.*:', '')) or 'unknown' }}
+
+    - name: Converge
+      block:
+        - name: Fetch and cache this node's facts
+          ansible.builtin.include_role:
+            name: node_facts
+
+        - name: Network, as NetBox describes it
+          ansible.builtin.include_role:
+            name: network_from_netbox
+
+        - name: Munge, with the overlay-delivered cluster key
+          ansible.builtin.include_role:
+            name: munge
+
+        - name: Node exporter
+          ansible.builtin.include_role:
+            name: node_exporter
+
+        - name: Burn-in, while NetBox holds this node at staged
+          when: node_facts.device.status == 'staged'
+          ansible.builtin.include_role:
+            name: burnin
+
+        - name: Configless slurmd
+          ansible.builtin.include_role:
+            name: slurm_compute
+
+      rescue:
+        - name: Record which task failed
+          ansible.builtin.set_fact:
+            convergence_report_result: failed
+            convergence_report_failed_task: "{{ ansible_failed_task.name | default('unknown') }}"
+
+      always:
+        - name: Report this run to NetBox
+          ansible.builtin.include_role:
+            name: convergence_report
+
+    - name: Fail the run so the unit records it
+      when: convergence_report_result | default('success') == 'failed'
+      ansible.builtin.fail:
+        msg: "pull run failed at: {{ convergence_report_failed_task }}"

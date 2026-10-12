@@ -1,0 +1,7 @@
+---
+# The head-node service that stands between a credential-free node and
+# NetBox. See files/cluster_node_api.py and docs/node-self-configuration.md.
+node_api_bind: "{{ lab_prov_gw }}"
+node_api_port: "{{ lab_node_api_port }}"
+node_api_netbox_env: /etc/cluster-lab/netbox.env
+node_api_role_slug: compute

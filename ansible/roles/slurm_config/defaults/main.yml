@@ -1,0 +1,12 @@
+---
+# Rendered on the controller only. Compute nodes fetch these over Slurm's own
+# RPC at slurmd start (configless), so distribution is O(1) in node count:
+# this role touches one host however many nodes there are.
+slurm_config_dir: /etc/slurm
+slurm_config_files: [slurm.conf, cgroup.conf, gres.conf, topology.conf]
+slurm_config_controller_host: "{{ ansible_hostname }}"
+slurm_config_state_dir: /var/lib/slurm/slurmctld
+slurm_config_log_dir: /var/log/slurm
+slurm_config_jobcomp_log: "{{ slurm_config_log_dir }}/jobcomp.log"
+slurm_config_renderer: /usr/local/sbin/cluster-render-slurm-model
+slurm_config_netbox_url: http://127.0.0.1:8000

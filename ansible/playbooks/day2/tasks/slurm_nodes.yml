@@ -1,0 +1,23 @@
+---
+# The node list for a day-2 play: whatever the operator named, else every
+# node slurmctld knows, which is every active NetBox compute node. Never a
+# list in a file.
+- name: List the Slurm nodes
+  when: day2_nodes | default('') | length == 0
+  ansible.builtin.command:
+    cmd: sinfo --noheader --Node --format=%N
+  register: day2_sinfo_nodes
+  changed_when: false
+  check_mode: false
+
+- name: Settle the node list
+  ansible.builtin.set_fact:
+    day2_node_list: >-
+      {{ (day2_nodes.split(',') if (day2_nodes | default('') | length > 0)
+          else day2_sinfo_nodes.stdout_lines) | map('trim') | select | unique | sort | list }}
+
+- name: Refuse an empty node list
+  ansible.builtin.assert:
+    that: day2_node_list | length > 0
+    fail_msg: No nodes named and slurmctld knows none.
+    quiet: true
