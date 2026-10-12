@@ -1,15 +1,74 @@
 ---
-- name: Record convergence result in NetBox
-  delegate_to: localhost
-  netbox.netbox.netbox_device:
-    netbox_url: "{{ lookup('env', 'NETBOX_URL') }}"
-    netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') }}"
-    validate_certs: true
-    data:
-      name: "{{ inventory_hostname }}"
-      custom_fields:
-        last_git_sha: "{{ convergence_report_git_sha }}"
-        image_tag: "{{ convergence_report_image_tag }}"
-        convergence_result: "{{ convergence_report_result }}"
-        convergence_duration_seconds: "{{ convergence_report_duration_seconds }}"
-    state: present
+# Reporting observes the run; it is not configuration. Every task here is
+# `changed_when: false` so a second, no-op run still reports `changed=0`.
+# Read-only; the git module checks out, it does not report HEAD.
+- name: Read the commit this run applied
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: git -C "{{ playbook_dir }}" rev-parse HEAD
+  register: convergence_report_sha
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Assemble the convergence record
+  vars:
+    # An env lookup is unsafe text; it is cast at the point of arithmetic.
+    convergence_report_started: >-
+      {{ lookup('env', 'CLUSTER_PULL_STARTED') | default(cluster_play_started, true) }}
+  ansible.builtin.set_fact:
+    convergence_report_body:
+      result: "{{ convergence_report_result }}"
+      git_sha: >-
+        {{ convergence_report_sha.stdout | trim
+           if (convergence_report_sha.rc | default(1)) == 0 else 'unknown' }}
+      image_tag: "{{ cluster_image_tag }}"
+      duration_seconds: >-
+        {{ ((now(utc=true).timestamp() | float) - (convergence_report_started | float)) | round(3) }}
+      finished_at: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+      run_id: "{{ convergence_report_run_id }}"
+      failed_task: "{{ convergence_report_failed_task | truncate(200, true, '') }}"
+
+- name: Create the convergence state directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ convergence_report_state_dir }}"
+    - "{{ convergence_report_marker_dir }}"
+  changed_when: false
+
+- name: Keep the last run on the node
+  ansible.builtin.copy:
+    content: "{{ convergence_report_body | to_nice_json }}\n"
+    dest: "{{ convergence_report_state_dir }}/last-run.json"
+    owner: root
+    group: root
+    mode: "0644"
+  changed_when: false
+  failed_when: false
+
+- name: Report the run to this node's NetBox record
+  when:
+    - not ansible_check_mode
+    - convergence_report_api | length > 0
+  ansible.builtin.uri:
+    url: "{{ convergence_report_api }}/v1/self/convergence"
+    method: POST
+    body_format: json
+    body: "{{ convergence_report_body }}"
+    status_code: 200
+    timeout: 15
+  changed_when: false
+
+- name: Tell the pull wrapper the play reported
+  when: not ansible_check_mode
+  ansible.builtin.file:
+    path: "{{ convergence_report_marker_dir }}/reported-{{ convergence_report_run_id }}"
+    state: touch
+    mode: "0644"
+    modification_time: preserve
+    access_time: preserve
+  changed_when: false

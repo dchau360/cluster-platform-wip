@@ -1,0 +1,37 @@
+---
+# local.yml in the node image itself, under systemd, run by the node's own
+# ansible-core the way ansible-pull runs it. Molecule's idempotence step
+# requires the second run to report changed=0. COMPUTE_IMAGE is the pinned
+# node image; CI sets it in .github/workflows/ci.yml.
+dependency:
+  name: galaxy
+  enabled: false
+driver:
+  name: docker
+platforms:
+  - name: cn01
+    hostname: cn01
+    image: "${COMPUTE_IMAGE}"
+    pre_build_image: true
+    privileged: true
+    cgroupns_mode: host
+    command: /usr/sbin/init
+    tmpfs: ["/run", "/tmp"]
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - "${MOLECULE_PROJECT_DIRECTORY}:/src:ro"
+provisioner:
+  name: ansible
+  playbooks:
+    prepare: prepare.yml
+    converge: converge.yml
+    verify: verify.yml
+scenario:
+  test_sequence:
+    - destroy
+    - create
+    - prepare
+    - converge
+    - idempotence
+    - verify
+    - destroy

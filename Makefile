@@ -23,7 +23,8 @@ N ?=
 export N
 
 .PHONY: help up down down-hard demo nodes-up nodes-down status timings \
-        discover \
+        discover promote convergence-status drain resume reconfigure \
+        rolling-update burnin-gate check-node-roles test-python \
         systemd-install verify verify-isolation verify-idempotent \
         redfish redfish-demo converge rollback drill-nic-swap drill-reprovision \
         acceptance \
@@ -80,6 +81,33 @@ status: ## Show units, segment, nodes, leases
 discover: ## Boot a node into the discovery image and verify its NetBox record. NODE=cn01
 	@$(RUN) $(S)/discover.sh
 
+# --- node self-configuration and day 2 (SRE-7) ------------------------------
+#
+# Nodes configure themselves with ansible-pull from the `deployed` ref. These
+# targets are the jobs a node cannot do for itself. See
+# docs/node-self-configuration.md.
+
+promote: ## Move the deployed ref to a green commit. make promote SHA=<commit>
+	@$(RUN) $(S)/promote.sh
+
+convergence-status: ## Each node's last pull run from NetBox; non-zero if stale/failed
+	@$(RUN) $(S)/convergence-status.sh
+
+drain: ## Drain Slurm nodes. make drain NODES=<node>[,<node>...] [WAIT=1] [REASON=...]
+	@$(RUN) $(S)/day2.sh drain
+
+resume: ## Resume Slurm nodes. make resume NODES=<node>[,<node>...]
+	@$(RUN) $(S)/day2.sh resume
+
+reconfigure: ## Re-render the controller's Slurm files from NetBox and reconfigure
+	@$(RUN) $(S)/day2.sh reconfigure
+
+rolling-update: ## Rolling image update, rollback on failure. make rolling-update TAG=sha-<new>
+	@$(RUN) $(S)/day2.sh rolling_update
+
+burnin-gate: ## Judge staged nodes' burn-in from NetBox; flip to active or failed
+	@$(RUN) $(S)/day2.sh burnin_gate
+
 # --- management plane ------------------------------------------------------
 
 redfish: ## List the systems sushy-emulator exposes over Redfish
@@ -118,7 +146,7 @@ need = @command -v $(1) >/dev/null 2>&1 || { \
 	  printf 'error: %s not found, so this gate cannot run.\n       %s\n' '$(1)' '$(2)' >&2; \
 	  exit 127; }
 
-lint: check-host-values secrets tracked-secrets git-identity lint-yaml lint-ansible lint-shell ## Run every repo gate
+lint: check-host-values secrets tracked-secrets git-identity lint-yaml lint-ansible lint-shell check-node-roles test-python ## Run every repo gate
 
 check-host-values: ## Fail if any host-specific value is in a tracked file
 	@$(RUN) $(S)/check-no-host-values.sh
@@ -133,6 +161,12 @@ secrets: ## Run gitleaks over the worktree and the full history
 	$(call need,gitleaks,Install step is in docs/lab-host-setup.md.)
 	@gitleaks dir . --redact --no-banner --verbose
 	@gitleaks git . --redact --no-banner
+
+check-node-roles: ## Fail if a node-local role reaches another host
+	@$(RUN) $(S)/check-node-roles-are-local.sh
+
+test-python: ## Unit tests: NetBox seeding, renderers, node API, burn-in gate
+	@cd netbox && python3 -m unittest -q test_ib_guid test_render_dnsmasq test_render_slurm test_node_api test_burnin_gate
 
 lint-yaml: ## yamllint
 	$(call need,yamllint,Install step is in docs/lab-host-setup.md.)

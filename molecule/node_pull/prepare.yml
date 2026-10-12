@@ -1,0 +1,16 @@
+---
+- name: Stand the container in for a booted node
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Wait for systemd inside the container
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        cmd: systemctl is-system-running --wait
+      register: node_pull_systemd
+      changed_when: false
+      failed_when: node_pull_systemd.stdout not in ['running', 'degraded']
+
+    - name: Supply what Warewulf and the head node would have
+      ansible.builtin.command:
+        cmd: /src/ansible/tests/prepare-node-container.sh
+      changed_when: true

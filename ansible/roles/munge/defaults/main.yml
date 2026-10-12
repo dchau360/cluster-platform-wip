@@ -1,0 +1,7 @@
+---
+# The cluster key arrives at boot in the cluster-identity Warewulf runtime
+# overlay, root-owned. munged refuses a key it does not own, and wwclient
+# re-lays the overlay file periodically, so the key is copied rather than
+# chowned in place: a chown would be undone and redone on every pull run.
+munge_key_source: /etc/cluster-lab/munge.key
+munge_key: /etc/munge/munge.key

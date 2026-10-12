@@ -1,0 +1,5 @@
+---
+# The cluster key, generated once by the warewulf_server role. The controller
+# uses the same key the overlay gives every node.
+slurm_controller_munge_key_source: /etc/cluster-lab/munge.key
+slurm_controller_packages: [slurmctld, slurm-client, munge]

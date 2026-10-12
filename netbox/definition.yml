@@ -35,3 +35,28 @@ custom_fields:
   # than by MAC. Written against synthetic GUID data only: this lab has no
   # InfiniBand hardware. See docs/ib-and-dhcp-option61.md.
   - {name: ib_guid, type: text, object_types: [dcim.interface]}
+  # Written by the head-node node API on behalf of each node's pull run, so
+  # "which nodes are on which commit" is a NetBox query. See
+  # docs/node-self-configuration.md.
+  - {name: last_converged_at, type: text}
+  - {name: convergence_run_id, type: text}
+  - {name: convergence_failed_task, type: text}
+  # Burn-in: the node's raw measurements, and the gate's verdict on them.
+  # The node writes the first and never the second; the gate runs on the
+  # head node and is the only writer of the device status.
+  - {name: burnin_results, type: json, netbox_type: json}
+  - {name: burnin_reported_at, type: text}
+  - {name: burnin_verdict, type: text}
+
+# A new node is `staged` until the burn-in gate passes it. The seeder sets
+# this once, at creation; after that the gate owns the status.
+new_device_status: staged
+
+# The switching fabric topology.conf is rendered from: one leaf per rack,
+# each leaf uplinked to one spine, nodes cabled to the leaf in their rack.
+fabric:
+  spine: spine-01
+  leaf_prefix: leaf-
+  node_interface: provisioning
+  switch_role: {name: Switch, slug: switch}
+  switch_type: {model: synthetic-switch, slug: synthetic-switch}

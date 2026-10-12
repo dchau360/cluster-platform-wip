@@ -1,0 +1,4 @@
+---
+# The binary and unit ship in compute-base; enabling them is this role's job.
+node_exporter_service: node_exporter
+node_exporter_port: 9100

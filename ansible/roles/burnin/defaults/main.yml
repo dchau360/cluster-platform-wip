@@ -1,0 +1,16 @@
+---
+# Burn-in measures; it does not judge. Every number below goes to NetBox as
+# raw data, and the gate (playbooks/day2/burnin_gate.yml, on the head node)
+# decides. A node never sends "passed".
+burnin_api: "{{ lookup('env', 'CLUSTER_NODE_API') }}"
+burnin_state_dir: /run/cluster-burnin
+burnin_cpu_seconds: 30
+burnin_memory_seconds: 20
+# Share of RAM the memory stressor walks and verifies. A share, not a size,
+# so the same role fits any node NetBox describes.
+burnin_memory_percent: 60
+burnin_disk_size: 512M
+# fio writes to the raw scratch disk. Burn-in runs only on a `staged` node,
+# whose disk holds nothing: Warewulf nodes boot stateless into RAM. The role
+# still refuses a disk that has partitions, holders or a mount.
+burnin_disk_prefixes: [vd, sd, nvme]

@@ -1,0 +1,16 @@
+---
+# The outer task is "changed" exactly when the inner local.yml run changed
+# something, so Molecule's idempotence step tests the node play itself.
+- name: Run local.yml inside the node, as ansible-pull would
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Run the node play
+      ansible.builtin.command:
+        cmd: /src/ansible/tests/run-local-play.sh
+      register: node_pull_run
+      changed_when: node_pull_run.stdout is search('changed=[1-9]')
+
+    - name: Show the node play's recap
+      ansible.builtin.debug:
+        msg: "{{ node_pull_run.stdout_lines | select('search', 'ok=|PLAY RECAP|ansible-playbook') | list }}"

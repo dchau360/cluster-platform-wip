@@ -36,11 +36,15 @@
         state: directory
         mode: "0755"
 
+  # Order matters only where one role reads what another writes: the node API
+  # and the Slurm renderer read NetBox; the controller needs the cluster Munge
+  # key warewulf_server generates; Prometheus scrapes the node API.
   roles:
     - netbox
     - dnsmasq
-    - slurmctld
-    - prometheus
     - git_mirror
     - warewulf_server
     - sushy_emulator
+    - node_api
+    - slurm_controller
+    - prometheus

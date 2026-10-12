@@ -1,5 +1,12 @@
 ---
-convergence_report_git_sha: unknown
-convergence_report_image_tag: unknown
+# One record per pull run, written to this node's NetBox device through the
+# head-node API: commit, image, result, duration. Set by local.yml.
+convergence_report_api: "{{ lookup('env', 'CLUSTER_NODE_API') }}"
+convergence_report_run_id: "{{ lookup('env', 'CLUSTER_PULL_RUN_ID') | default('manual', true) }}"
 convergence_report_result: success
-convergence_report_duration_seconds: 0
+convergence_report_failed_task: ""
+convergence_report_state_dir: /var/lib/cluster-pull
+# The pull wrapper reads this marker to know the play itself reported. If it
+# is missing after a failed ansible-pull, the play never ran (the mirror was
+# unreachable, or the checkout failed) and the wrapper reports instead.
+convergence_report_marker_dir: /run/cluster-pull

@@ -1,0 +1,84 @@
+---
+- name: Look for Slurm configuration files pushed to this node
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ slurm_compute_forbidden_files }}"
+  register: slurm_compute_forbidden
+
+- name: Refuse a node that carries its own Slurm configuration
+  ansible.builtin.assert:
+    that:
+      - slurm_compute_forbidden.results | selectattr('stat.exists') | list | length == 0
+    fail_msg: >-
+      {{ slurm_compute_forbidden.results | selectattr('stat.exists')
+         | map(attribute='item') | join(', ') }} exist on a configless node.
+      Slurm configuration lives on the controller only.
+    quiet: true
+
+- name: Create the job user groups
+  ansible.builtin.group:
+    name: "{{ item.name }}"
+    gid: "{{ item.uid }}"
+  loop: "{{ cluster_job_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Create the job users, with the same UID as on the controller
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    uid: "{{ item.uid }}"
+    group: "{{ item.name }}"
+    shell: /bin/bash
+    create_home: true
+  loop: "{{ cluster_job_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Create the slurmd spool and log directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /var/spool/slurmd
+    - /var/log/slurm
+
+- name: Point slurmd at the controller
+  ansible.builtin.template:
+    src: slurmd.sysconfig.j2
+    dest: /etc/sysconfig/slurmd
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart slurmd
+
+- name: Create the slurmd unit drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/slurmd.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Make slurmd retry while the controller is unreachable
+  ansible.builtin.template:
+    src: slurmd-override.conf.j2
+    dest: /etc/systemd/system/slurmd.service.d/10-cluster.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart slurmd
+
+# `no_block`: slurmd is Type=notify and only reports ready once it has its
+# configuration from slurmctld. With the controller down that is "later",
+# and the unit's own Restart=always loop owns the waiting. The pull run
+# configures the node; it does not wait on another host.
+- name: Run slurmd on an active node, stop it on any other
+  ansible.builtin.systemd:
+    name: slurmd
+    enabled: "{{ slurm_compute_enabled | bool }}"
+    state: "{{ 'started' if (slurm_compute_enabled | bool) else 'stopped' }}"
+    daemon_reload: true
+    no_block: "{{ slurm_compute_enabled | bool }}"

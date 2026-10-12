@@ -42,6 +42,43 @@ lab_node_ip_offset: "{{ lookup('env', 'PROV_NODE_IP_OFFSET') | default('10', tru
 lab_netbox_segment_port: "{{ lookup('env', 'NETBOX_SEGMENT_PORT') | default(8001, true) }}"
 lab_netbox_segment_url: "http://{{ lab_prov_gw }}:{{ lab_netbox_segment_port }}"
 
+# ---------------------------------------------------------------------------
+# Node self-configuration (SRE-7). See docs/node-self-configuration.md.
+#
+# These are read on the head node, where lab/local.env is loaded, and reach a
+# node only through what the head node renders for it: the cluster-pull
+# overlay (mirror, ref, API) and the node API's facts (controller address and
+# port). A node never reads them from its own environment, so the head node's
+# local.env is the single place each one is set.
+# ---------------------------------------------------------------------------
+lab_node_api_port: "{{ lookup('env', 'NODE_API_PORT') | default(8002, true) }}"
+lab_node_api_url: "http://{{ lab_prov_gw }}:{{ lab_node_api_port }}"
+lab_git_mirror_url: "http://{{ lab_prov_gw }}/git/platform.git"
+# The ref nodes pull. Never `main`: promotion is moving this ref, and a
+# commit only reaches it after the CI check-mode run of local.yml passed.
+lab_deployed_ref: "{{ lookup('env', 'DEPLOYED_REF') | default('deployed', true) }}"
+lab_pull_interval: "{{ lookup('env', 'PULL_INTERVAL') | default('15min', true) }}"
+lab_pull_splay: "{{ lookup('env', 'PULL_SPLAY') | default('5min', true) }}"
+lab_pull_timeout: "{{ lookup('env', 'PULL_TIMEOUT') | default('20min', true) }}"
+# A node whose last report is older than this is stale. Three missed timer
+# runs, so one slow mirror fetch is not an alert.
+lab_convergence_stale_seconds: "{{ lookup('env', 'CONVERGENCE_STALE_SECONDS') | default(3600, true) }}"
+lab_node_exporter_port: "{{ lookup('env', 'NODE_EXPORTER_PORT') | default(9100, true) }}"
+
+# Slurm. Site values only; node, topology and GRES values come from NetBox.
+lab_slurm_cluster_name: "{{ lookup('env', 'SLURM_CLUSTER_NAME') | default('lab', true) }}"
+lab_slurmctld_port: "{{ lookup('env', 'SLURMCTLD_PORT') | default(6817, true) }}"
+lab_slurmd_port: "{{ lookup('env', 'SLURMD_PORT') | default(6818, true) }}"
+lab_slurm_partition: "{{ lookup('env', 'SLURM_PARTITION') | default('compute', true) }}"
+# Memory held back from Slurm on every node, for the OS. RealMemory is the
+# NetBox-discovered memory minus this.
+lab_slurm_mem_reserve_mib: "{{ lookup('env', 'SLURM_MEM_RESERVE_MIB') | default(256, true) }}"
+
+# The users jobs run as. Same UID on the controller and every node, which is
+# all Slurm needs; a directory service is out of scope for the lab.
+cluster_job_users:
+  - {name: hpc, uid: 2000}
+
 # Writable lab state. Never inside the repo, never in git.
 lab_state_dir: "{{ lookup('env', 'LAB_STATE_DIR') | default('/var/lib/cluster-lab', true) }}"
 

@@ -1,0 +1,62 @@
+---
+# make rolling-update TAG=sha-<new> [NODES=<node>[,<node>...]]
+#
+# One node at a time: drain (running jobs finish), point the node at the new
+# image, power-cycle it over Redfish, wait until it has pulled, converged and
+# reported the new image tag to NetBox and slurmd is back, resume, next.
+#
+# Rollback under failure: if a node does not come back healthy on the new tag
+# within the timeout, or reports a failed pull, it is put back on the image it
+# had, rebooted, verified and resumed, and the rollout stops there. Nodes not
+# yet reached never see the new image; nodes already done keep it.
+- name: Rolling image update
+  hosts: lab_control
+  gather_facts: false
+  vars_files: [../../group_vars/all.yml]
+  vars:
+    day2_nodes: "{{ lookup('env', 'NODES') }}"
+    rolling_tag: "{{ lookup('env', 'TAG') }}"
+    rolling_registry: >-
+      {{ lookup('env', 'WAREWULF_IMAGE_REGISTRY') | default('ghcr.io/dchau360/cluster-images-wip', true) }}
+    rolling_image: "{{ lookup('env', 'WAREWULF_IMAGE_NAME') | default('compute-slurm', true) }}"
+    rolling_reference: "docker://{{ rolling_registry }}/{{ rolling_image }}:{{ rolling_tag }}"
+    rolling_ww_image: "{{ rolling_image }}-{{ rolling_tag }}"
+    rolling_drain_timeout: "{{ lookup('env', 'DRAIN_TIMEOUT') | default(1800, true) | int }}"
+    rolling_healthy_timeout: "{{ lookup('env', 'HEALTHY_TIMEOUT') | default(600, true) | int }}"
+    rolling_redfish: "{{ playbook_dir }}/../../../scripts/redfish.sh"
+  tasks:
+    - name: Require a pinned tag
+      ansible.builtin.assert:
+        that:
+          - rolling_tag is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')
+          - rolling_tag != 'latest'
+        fail_msg: "TAG must be a pinned image tag (sha-...), not '{{ rolling_tag }}'."
+        quiet: true
+
+    - name: Settle the node list
+      ansible.builtin.import_tasks: tasks/slurm_nodes.yml
+
+    - name: Read the NetBox token
+      ansible.builtin.import_tasks: tasks/netbox_token.yml
+
+    - name: List the imported Warewulf images
+      become: true
+      ansible.builtin.command:
+        cmd: wwctl image list
+      register: rolling_images
+      changed_when: false
+
+    # Imported under a tag-specific name, so the previous image stays
+    # importable-free for the rollback: rolling back is a pointer change.
+    - name: Import the new image once, before any node is touched
+      when: rolling_ww_image not in (rolling_images.stdout_lines | map('trim') | list)
+      become: true
+      ansible.builtin.command:
+        cmd: wwctl image import --build {{ rolling_reference }} {{ rolling_ww_image }}
+      changed_when: true
+
+    - name: Update one node at a time
+      ansible.builtin.include_tasks: tasks/update_one_node.yml
+      loop: "{{ day2_node_list }}"
+      loop_control:
+        loop_var: rolling_node

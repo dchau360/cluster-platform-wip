@@ -1,0 +1,23 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Configure this node from its NetBox record (ansible-pull, pinned ref)
+Documentation=https://github.com/dchau360/cluster-platform-wip/blob/main/docs/node-self-configuration.md
+# Enabled in multi-user.target, so the boot run is immediate; the timer then
+# repeats it, splayed. After the runtime-overlay refresh so the Munge key and
+# image reference are on disk.
+Wants=network-online.target
+After=network-online.target wwclient.service cluster-identity-check.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cluster-pull
+RuntimeDirectory=cluster-pull
+RuntimeDirectoryPreserve=yes
+# The serial console carries the boot run, so a node's first convergence is
+# in the boot transcript like the identity proof.
+StandardOutput=journal+console
+StandardError=journal+console
+TimeoutStartSec={{ lab_pull_timeout }}
+
+[Install]
+WantedBy=multi-user.target

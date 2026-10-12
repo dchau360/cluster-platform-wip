@@ -1,0 +1,26 @@
+---
+# make reconfigure — re-render the controller's Slurm files from NetBox and
+# reconfigure. One host is touched however many nodes there are: compute
+# nodes re-fetch over Slurm's RPC (configless).
+- name: Reconfigure the Slurm controller from NetBox
+  hosts: lab_control
+  gather_facts: true
+  vars_files: [../../group_vars/all.yml]
+  tasks:
+    - name: Render and apply
+      ansible.builtin.include_role:
+        name: slurm_config
+
+    - name: Apply now
+      ansible.builtin.meta: flush_handlers
+
+    - name: Show what slurmctld now serves
+      ansible.builtin.command:
+        cmd: sinfo --Node --long
+      register: day2_sinfo
+      changed_when: false
+      check_mode: false
+
+    - name: Print the node table
+      ansible.builtin.debug:
+        msg: "{{ day2_sinfo.stdout_lines }}"

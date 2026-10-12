@@ -1,0 +1,20 @@
+---
+# Append one timing record, in the schema scripts/lib/timing.sh writes, to the
+# run the calling script opened (LAB_RUN_ID, LAB_TIMING_DIR). The day-2 plays
+# time each node's phases into the same NDJSON stream as every other phase.
+# Inputs: day2_phase, day2_phase_node, day2_phase_start, day2_phase_status.
+- name: "Record a timing phase: {{ day2_phase }}"
+  when: lookup('env', 'LAB_TIMING_DIR') | length > 0
+  vars:
+    day2_phase_end: "{{ now(utc=true).timestamp() }}"
+  ansible.builtin.lineinfile:
+    path: "{{ lookup('env', 'LAB_TIMING_DIR') }}/{{ lookup('env', 'LAB_RUN_ID') }}.ndjson"
+    create: true
+    mode: "0644"
+    line: >-
+      {{ {'run': lookup('env', 'LAB_RUN_ID'), 'n': lookup('env', 'NODE_COUNT') | default(0, true) | int,
+          'phase': day2_phase, 'node': day2_phase_node,
+          'start': day2_phase_start | float, 'end': day2_phase_end | float,
+          'seconds': ((day2_phase_end | float) - (day2_phase_start | float)) | round(3),
+          'status': day2_phase_status | default('ok')} | to_json }}
+  changed_when: false

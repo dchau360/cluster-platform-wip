@@ -1,0 +1,16 @@
+# {{ ansible_managed }}
+[Unit]
+# Retry for as long as it takes: a node can boot before its controller.
+StartLimitIntervalSec=0
+Requires=munge.service
+After=munge.service
+
+[Service]
+Restart=always
+RestartSec={{ slurm_compute_restart_sec }}
+# Until slurmd has fetched its configuration it has no log file; what it says
+# then (including "cannot reach the controller, retrying") goes to stderr.
+# The serial console is captured on the head node, so that is where an
+# operator reads it without logging in to the node.
+StandardOutput=journal+console
+StandardError=journal+console

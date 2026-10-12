@@ -25,6 +25,10 @@ concurrency:
 
 env:
   GITLEAKS_VERSION: "8.30.1"
+  # The node image local.yml is tested in: the image nodes boot, with the
+  # ansible-core nodes run. Pinned, so a test result names the image it ran
+  # against; bump it in the same change that deploys a new tag.
+  COMPUTE_IMAGE: ghcr.io/dchau360/cluster-images-wip/compute-slurm:sha-54a0b45db3a1
 
 jobs:
   secrets:
@@ -167,3 +171,52 @@ jobs:
       # against synthetic sysfs fixtures and GUIDs, because the lab has no
       # IB hardware. No third-party dependency, so nothing to install.
       - run: python3 -m unittest discover -s netbox -p 'test_*.py' -v
+
+  node-roles:
+    name: node roles and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # Node-local roles use no delegate_to and read no other host's hostvars:
+      # the constraint that lets one role set serve ansible-pull and push.
+      - name: Node-local roles stay node-local
+        run: ./scripts/check-node-roles-are-local.sh
+      - name: Unit tests (seeding, renderers, node API, burn-in gate)
+        run: make test-python
+
+  # The gate between `main` and `deployed`. local.yml runs in --check inside
+  # the node image, under systemd, with the node's own ansible-core, exactly
+  # as ansible-pull would run it. A commit that would break pull fails here,
+  # and scripts/promote.sh and the `deployed` branch protection both require
+  # this job to be green before the ref can move.
+  pull-check:
+    name: pull check-mode
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Boot a node-image container under systemd
+        run: |
+          set -euo pipefail
+          docker run -d --name node --hostname cn01 --privileged --cgroupns=host \
+            -v /sys/fs/cgroup:/sys/fs/cgroup:rw --tmpfs /run --tmpfs /tmp \
+            -v "$PWD:/src:ro" "$COMPUTE_IMAGE" /usr/sbin/init
+          timeout 120 bash -c 'until docker exec node systemctl is-system-running --wait 2>/dev/null \
+            | grep -qE "^(running|degraded)$"; do sleep 1; done'
+          echo "systemd is up in the node container"
+      - name: Supply what Warewulf and the head node would have
+        run: docker exec node /src/ansible/tests/prepare-node-container.sh
+      - name: local.yml --check, as the node would run it
+        run: docker exec node /src/ansible/tests/run-local-play.sh --check --diff
+
+  molecule:
+    name: molecule
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: pip install --disable-pip-version-check "ansible-core>=2.18" molecule "molecule-plugins[docker]" docker
+      - run: ansible-galaxy collection install community.docker ansible.posix
+      - name: local.yml converges, then converges again with changed=0
+        run: molecule test -s node_pull

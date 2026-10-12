@@ -1,0 +1,32 @@
+---
+# make drain NODES=<node>[,<node>...] [REASON=...] [WAIT=1]
+# Stops new work landing on the nodes; running jobs finish. WAIT=1 blocks
+# until each node is `drained` (no job left), which is what a reboot needs.
+- name: Drain nodes
+  hosts: lab_control
+  gather_facts: false
+  vars_files: [../../group_vars/all.yml]
+  vars:
+    day2_nodes: "{{ lookup('env', 'NODES') }}"
+    day2_reason: "{{ lookup('env', 'REASON') | default('day-2 drain', true) }}"
+    day2_wait: "{{ lookup('env', 'WAIT') | default('0', true) | bool }}"
+    day2_drain_timeout: "{{ lookup('env', 'DRAIN_TIMEOUT') | default(1800, true) | int }}"
+  tasks:
+    - name: Settle the node list
+      ansible.builtin.import_tasks: tasks/slurm_nodes.yml
+
+    - name: Drain
+      become: true
+      ansible.builtin.command:
+        argv: [scontrol, update, "NodeName={{ day2_node_list | join(',') }}", State=DRAIN, "Reason={{ day2_reason }}"]
+      changed_when: true
+
+    - name: Wait until no job is left on the nodes
+      when: day2_wait | bool
+      ansible.builtin.command:
+        cmd: sinfo --noheader --Node --nodes={{ day2_node_list | join(',') }} --format=%T
+      register: day2_drain_state
+      until: day2_drain_state.stdout_lines | reject('match', '^drained') | list | length == 0
+      retries: "{{ (day2_drain_timeout | int / 5) | int }}"
+      delay: 5
+      changed_when: false

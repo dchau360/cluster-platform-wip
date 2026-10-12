@@ -1,0 +1,148 @@
+---
+- name: Create the burn-in state directory
+  ansible.builtin.file:
+    path: "{{ burnin_state_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Check whether this boot already reported a burn-in
+  ansible.builtin.stat:
+    path: "{{ burnin_state_dir }}/reported"
+  register: burnin_reported
+
+# Once per boot. The marker is in /run, so a reboot re-runs burn-in, which is
+# what a re-staged node should get.
+- name: Burn in
+  when: not burnin_reported.stat.exists
+  block:
+    - name: Pick the scratch disk
+      ansible.builtin.set_fact:
+        burnin_disk: >-
+          {{ ansible_devices | dict2items
+             | selectattr('key', 'match', '^(' ~ (burnin_disk_prefixes | join('|')) ~ ')')
+             | selectattr('value.partitions', 'equalto', {})
+             | selectattr('value.holders', 'equalto', [])
+             | rejectattr('key', 'in', ansible_mounts | map(attribute='device')
+                                        | map('regex_replace', '^/dev/', '') | list)
+             | map(attribute='key') | sort | first | default('') }}
+
+    - name: Stress every CPU with verification
+      ansible.builtin.command:
+        argv:
+          - stress-ng
+          - --cpu
+          - "{{ ansible_processor_vcpus }}"
+          - --cpu-method
+          - matrixprod
+          - --verify
+          - --metrics-brief
+          - --timeout
+          - "{{ burnin_cpu_seconds }}s"
+          - --yaml
+          - "{{ burnin_state_dir }}/cpu.yaml"
+      register: burnin_cpu
+      changed_when: true
+      failed_when: false
+
+    - name: Walk and verify memory
+      ansible.builtin.command:
+        argv:
+          - stress-ng
+          - --vm
+          - "1"
+          - --vm-bytes
+          - "{{ burnin_memory_percent }}%"
+          - --vm-method
+          - all
+          - --verify
+          - --metrics-brief
+          - --timeout
+          - "{{ burnin_memory_seconds }}s"
+          - --yaml
+          - "{{ burnin_state_dir }}/memory.yaml"
+      register: burnin_memory
+      changed_when: true
+      failed_when: false
+
+    - name: Write and verify the scratch disk
+      when: burnin_disk | length > 0
+      ansible.builtin.command:
+        argv:
+          - fio
+          - --name=burnin
+          - "--filename=/dev/{{ burnin_disk }}"
+          - --rw=write
+          - --bs=1M
+          - "--size={{ burnin_disk_size }}"
+          - --direct=1
+          - --ioengine=libaio
+          - --iodepth=8
+          - --verify=crc32c
+          - --do_verify=1
+          - --output-format=json
+      register: burnin_fio
+      changed_when: true
+      failed_when: false
+
+    - name: Read the stressor metrics
+      ansible.builtin.slurp:
+        src: "{{ burnin_state_dir }}/{{ item }}.yaml"
+      loop: [cpu, memory]
+      register: burnin_metrics
+      failed_when: false
+
+    - name: Assemble the raw measurements
+      vars:
+        burnin_cpu_yaml: >-
+          {{ (burnin_metrics.results[0].content | default('') | b64decode | from_yaml) or {} }}
+        burnin_mem_yaml: >-
+          {{ (burnin_metrics.results[1].content | default('') | b64decode | from_yaml) or {} }}
+        burnin_fio_job: >-
+          {{ ((burnin_fio.stdout | default('{}') | from_json).jobs | default([{}])) | first }}
+      ansible.builtin.set_fact:
+        burnin_body:
+          reported_at: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+          image_tag: "{{ cluster_image_tag }}"
+          checks:
+            cpu:
+              exit_code: "{{ burnin_cpu.rc }}"
+              workers: "{{ ansible_processor_vcpus | int }}"
+              seconds: "{{ burnin_cpu_seconds | int }}"
+              bogo_ops_per_second: >-
+                {{ ((burnin_cpu_yaml.metrics | default([{}]) | first)['bogo-ops-per-second-real-time']
+                    | default(0)) | float }}
+            memory:
+              exit_code: "{{ burnin_memory.rc }}"
+              memtotal_mib: "{{ ansible_memtotal_mb | int }}"
+              percent: "{{ burnin_memory_percent | int }}"
+              bogo_ops_per_second: >-
+                {{ ((burnin_mem_yaml.metrics | default([{}]) | first)['bogo-ops-per-second-real-time']
+                    | default(0)) | float }}
+            disk:
+              device: "{{ burnin_disk }}"
+              exit_code: "{{ burnin_fio.rc | default(-1) }}"
+              job_error: "{{ burnin_fio_job.error | default(-1) | int }}"
+              write_mib_per_second: >-
+                {{ ((burnin_fio_job.write.bw_bytes | default(0)) / 1048576) | round(1) }}
+              verify_read_mib_per_second: >-
+                {{ ((burnin_fio_job.read.bw_bytes | default(0)) / 1048576) | round(1) }}
+
+    - name: Report the measurements to NetBox through the head node
+      when: not ansible_check_mode
+      ansible.builtin.uri:
+        url: "{{ burnin_api }}/v1/self/burnin"
+        method: POST
+        body_format: json
+        body: "{{ burnin_body }}"
+        status_code: 200
+      changed_when: false
+
+    - name: Mark this boot's burn-in as reported
+      ansible.builtin.copy:
+        content: "{{ burnin_body | to_nice_json }}\n"
+        dest: "{{ burnin_state_dir }}/reported"
+        owner: root
+        group: root
+        mode: "0600"

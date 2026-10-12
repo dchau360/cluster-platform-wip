@@ -1,0 +1,18 @@
+# {{ ansible_managed }}
+# Rendered from this node's NetBox interface {{ item.name }}.
+[connection]
+id=cluster-{{ item.name }}
+type=ethernet
+autoconnect=true
+
+[ethernet]
+mac-address={{ item.mac | upper }}
+
+[ipv4]
+method=manual
+{% for address in item.addresses %}
+address{{ loop.index }}={{ address }}
+{% endfor %}
+
+[ipv6]
+method=disabled

@@ -1,0 +1,8 @@
+---
+- name: Restart slurmd
+  when: slurm_compute_enabled | bool
+  ansible.builtin.systemd:
+    name: slurmd
+    state: restarted
+    daemon_reload: true
+    no_block: true

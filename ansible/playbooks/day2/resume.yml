@@ -1,0 +1,17 @@
+---
+# make resume NODES=<node>[,<node>...]
+- name: Resume nodes
+  hosts: lab_control
+  gather_facts: false
+  vars_files: [../../group_vars/all.yml]
+  vars:
+    day2_nodes: "{{ lookup('env', 'NODES') }}"
+  tasks:
+    - name: Settle the node list
+      ansible.builtin.import_tasks: tasks/slurm_nodes.yml
+
+    - name: Resume
+      become: true
+      ansible.builtin.command:
+        argv: [scontrol, update, "NodeName={{ day2_node_list | join(',') }}", State=RESUME]
+      changed_when: true

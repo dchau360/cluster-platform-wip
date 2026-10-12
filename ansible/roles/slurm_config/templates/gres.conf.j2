@@ -1,0 +1,7 @@
+# {{ ansible_managed }}
+# Rendered by the slurm_config role from NetBox discovered_gpu_count.
+{% for node in slurm_config_model.nodes if node.gpus %}
+NodeName={{ node.name }} Name=gpu Count={{ node.gpus }}
+{% else %}
+# No node in NetBox reports a GPU.
+{% endfor %}

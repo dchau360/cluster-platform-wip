@@ -253,6 +253,11 @@
     NETBOX_TOKEN: "{{ netbox_runtime_token }}"
     NETBOX_URL: http://127.0.0.1:8000
     NODE_COUNT: "{{ lab_node_count }}"
+    # The same inputs the harness builds nodes from, so the record's MAC and
+    # hostname are the ones the node actually has.
+    NODE_NAME_PREFIX: "{{ lab_node_name_prefix }}"
+    PROV_DOMAIN: "{{ lab_prov_domain }}"
+    PROV_MAC_OUI: "{{ lookup('env', 'PROV_MAC_OUI') | default('52:54:00', true) }}"
   register: netbox_seed_result
   changed_when: "'changed=0' not in netbox_seed_result.stdout"
   no_log: true

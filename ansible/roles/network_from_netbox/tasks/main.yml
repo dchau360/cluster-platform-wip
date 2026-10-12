@@ -1,0 +1,69 @@
+---
+# The node's network, as NetBox says it is.
+#
+# The provisioning interface is the link this very play was pulled over, and
+# Warewulf configured it at boot from the same NetBox address. This role
+# asserts it matches and never rewrites it: a pull run that could cut its own
+# link could half-apply and then be unable to report. Every other NetBox
+# interface the node physically has (matched by MAC) gets a NetworkManager
+# keyfile with exactly the NetBox addresses.
+
+- name: Set the hostname NetBox gives this node
+  ansible.builtin.hostname:
+    name: "{{ node_facts.hostname }}"
+    use: systemd
+
+- name: Map the node's MAC addresses to its interface names
+  ansible.builtin.set_fact:
+    network_from_netbox_local: >-
+      {{ network_from_netbox_local | default({})
+         | combine({(ansible_facts[item].macaddress | lower): item}) }}
+  loop: "{{ ansible_interfaces | map('regex_replace', '-', '_') | list }}"
+  when: ansible_facts[item].macaddress is defined
+
+- name: Find the provisioning interface by the address the node pulled over
+  ansible.builtin.set_fact:
+    network_from_netbox_provisioning: >-
+      {{ node_facts.interfaces
+         | selectattr('addresses', 'contains', node_facts.address)
+         | first | default({}) }}
+    # The local NIC that holds the provisioning address, whatever NetBox
+    # calls it. No keyfile is ever rendered for this MAC: it is the link this
+    # play was pulled over. (Discovery can record the same NIC a second time
+    # under its kernel name; that record must not become a second profile.)
+    network_from_netbox_provisioning_mac: >-
+      {{ ansible_interfaces | map('regex_replace', '-', '_')
+         | map('extract', ansible_facts)
+         | selectattr('ipv4', 'defined')
+         | selectattr('ipv4.address', 'equalto', node_facts.address.split('/')[0])
+         | map(attribute='macaddress') | map('lower') | first | default('') }}
+
+- name: Assert the live provisioning address is the NetBox address
+  ansible.builtin.assert:
+    that:
+      - network_from_netbox_provisioning | length > 0
+      - network_from_netbox_provisioning_mac | length > 0
+    fail_msg: >-
+      NetBox says this node is {{ node_facts.address }}; the node holds
+      {{ ansible_all_ipv4_addresses | join(', ') }}. Drift between Warewulf
+      and NetBox. Nothing was changed.
+    quiet: true
+
+- name: Render every other NetBox interface this node has
+  ansible.builtin.template:
+    src: cluster.nmconnection.j2
+    dest: "{{ network_from_netbox_connection_dir }}/cluster-{{ item.name }}.nmconnection"
+    owner: root
+    group: root
+    mode: "0600"
+  loop: >-
+    {{ node_facts.interfaces
+       | rejectattr('name', 'equalto', network_from_netbox_provisioning.name)
+       | selectattr('mac', 'truthy')
+       | rejectattr('mac', 'equalto', network_from_netbox_provisioning_mac)
+       | selectattr('addresses')
+       | selectattr('mac', 'in', (network_from_netbox_local | default({})).keys() | list)
+       | list }}
+  loop_control:
+    label: "{{ item.name }}"
+  notify: Reload NetworkManager connections

@@ -1,0 +1,113 @@
+---
+- name: "Read what the node runs now: {{ rolling_node }}"
+  become: true
+  ansible.builtin.command:
+    cmd: wwctl node list --json {{ rolling_node }}
+  register: rolling_current_raw
+  changed_when: false
+
+- name: "Remember the current image for a rollback: {{ rolling_node }}"
+  ansible.builtin.set_fact:
+    rolling_previous_image: "{{ (rolling_current_raw.stdout | from_json)[rolling_node]['image name'] }}"
+    rolling_previous_reference: >-
+      {{ ((rolling_current_raw.stdout | from_json)[rolling_node]['tags'] | default({}, true)).image_reference
+         | default('') }}
+
+- name: "Skip a node already on the new image: {{ rolling_node }}"
+  when: rolling_previous_image == rolling_ww_image
+  ansible.builtin.debug:
+    msg: "{{ rolling_node }} is on {{ rolling_ww_image }}; nothing to do"
+
+- name: "Roll one node to the new image: {{ rolling_node }}"
+  when: rolling_previous_image != rolling_ww_image
+  block:
+    - name: Start the drain clock
+      ansible.builtin.set_fact:
+        rolling_t0: "{{ now(utc=true).timestamp() }}"
+
+    - name: "Drain {{ rolling_node }}"
+      become: true
+      ansible.builtin.command:
+        argv:
+          - scontrol
+          - update
+          - "NodeName={{ rolling_node }}"
+          - State=DRAIN
+          - "Reason=rolling update to {{ rolling_tag }}"
+      changed_when: true
+
+    - name: "Wait for the running jobs to finish: {{ rolling_node }}"
+      ansible.builtin.command:
+        cmd: sinfo --noheader --Node --nodes={{ rolling_node }} --format=%T
+      register: rolling_drain_state
+      until: rolling_drain_state.stdout is match('^drained')
+      retries: "{{ (rolling_drain_timeout | int / 5) | int }}"
+      delay: 5
+      changed_when: false
+
+    - name: Record the drain
+      ansible.builtin.include_tasks: record_phase.yml
+      vars:
+        day2_phase: rolling-drain
+        day2_phase_node: "{{ rolling_node }}"
+        day2_phase_start: "{{ rolling_t0 }}"
+
+    - name: Point the node at the new image and reboot it
+      ansible.builtin.include_tasks: set_image_and_reboot.yml
+      vars:
+        rolling_target_image: "{{ rolling_ww_image }}"
+        rolling_target_reference: "{{ rolling_reference }}"
+
+    - name: Wait until the node reports the new image, converged
+      ansible.builtin.include_tasks: wait_healthy.yml
+      vars:
+        rolling_expect_tag: "{{ rolling_tag }}"
+
+    - name: Start the resume clock
+      ansible.builtin.set_fact:
+        rolling_t3: "{{ now(utc=true).timestamp() }}"
+
+    - name: "Resume {{ rolling_node }}"
+      become: true
+      ansible.builtin.command:
+        argv: [scontrol, update, "NodeName={{ rolling_node }}", State=RESUME]
+      changed_when: true
+
+    - name: Record the resume
+      ansible.builtin.include_tasks: record_phase.yml
+      vars:
+        day2_phase: rolling-resume
+        day2_phase_node: "{{ rolling_node }}"
+        day2_phase_start: "{{ rolling_t3 }}"
+
+  rescue:
+    - name: "Report the failure on {{ rolling_node }}"
+      ansible.builtin.debug:
+        msg: >-
+          {{ rolling_node }} did not come back healthy on {{ rolling_tag }}
+          ({{ ansible_failed_task.name | default('?') }}). Rolling it back to
+          {{ rolling_previous_image }} and stopping the rollout.
+
+    - name: Put the node back on its previous image and reboot it
+      ansible.builtin.include_tasks: set_image_and_reboot.yml
+      vars:
+        rolling_target_image: "{{ rolling_previous_image }}"
+        rolling_target_reference: "{{ rolling_previous_reference }}"
+
+    - name: Wait until the node reports its previous image, converged
+      ansible.builtin.include_tasks: wait_healthy.yml
+      vars:
+        rolling_expect_tag: "{{ rolling_previous_reference | regex_replace('^.*:', '') }}"
+
+    - name: "Resume the node on its previous image: {{ rolling_node }}"
+      become: true
+      ansible.builtin.command:
+        argv: [scontrol, update, "NodeName={{ rolling_node }}", State=RESUME]
+      changed_when: true
+
+    - name: Stop the rollout
+      ansible.builtin.fail:
+        msg: >-
+          ROLLED BACK: {{ rolling_node }} is back on {{ rolling_previous_image }} and
+          resumed. The rollout to {{ rolling_tag }} stopped here; nodes after it were
+          not touched.

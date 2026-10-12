@@ -1,0 +1,42 @@
+---
+- name: Verify the node configured itself
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Munge round-trips a credential with the delivered key
+      ansible.builtin.shell:
+        cmd: set -o pipefail && munge -n | unmunge
+        executable: /bin/bash
+      changed_when: false
+
+    - name: The node's services are enabled
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        cmd: systemctl is-enabled munge slurmd node_exporter
+      changed_when: false
+
+    - name: Read slurmd's options
+      ansible.builtin.slurp:
+        src: /etc/sysconfig/slurmd
+      register: node_pull_slurmd
+
+    - name: Check for a Slurm configuration file
+      ansible.builtin.stat:
+        path: /etc/slurm/slurm.conf
+      register: node_pull_slurm_conf
+
+    - name: Read the cached facts and the last run
+      ansible.builtin.slurp:
+        src: "{{ item }}"
+      loop:
+        - /var/cache/cluster-node/facts.json
+        - /var/lib/cluster-pull/last-run.json
+      register: node_pull_files
+
+    - name: Configless, cached, reported
+      ansible.builtin.assert:
+        that:
+          - "'--conf-server 10.42.0.1:6817' in (node_pull_slurmd.content | b64decode)"
+          - not node_pull_slurm_conf.stat.exists
+          - (node_pull_files.results[0].content | b64decode | from_json).hostname == 'cn01'
+          - (node_pull_files.results[1].content | b64decode | from_json).result == 'success'
+          - (node_pull_files.results[1].content | b64decode | from_json).image_tag == 'ci'
