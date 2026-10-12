@@ -106,11 +106,11 @@ def guid_to_client_id(guid: str | None) -> str | None:
 
 def reservation_line(hostname: str | None, ip: str | None,
                      guid: str | None) -> str | None:
-    """A ``dhcp-host=id:...,ip,name`` line, or ``None`` if it is unusable."""
+    """An ``id:...,ip,name`` hosts-file entry, or ``None`` if unusable."""
     client_id = guid_to_client_id(guid)
     if client_id is None or not hostname or not ip:
         return None
-    return f"dhcp-host=id:{client_id},{ip},{hostname}\n"
+    return f"id:{client_id},{ip},{hostname}\n"
 
 
 def _read(path: Path) -> str:

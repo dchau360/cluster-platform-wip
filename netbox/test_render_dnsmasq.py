@@ -35,7 +35,7 @@ class RenderEntriesTest(unittest.TestCase):
             {"hostname": "cn01", "ip": "10.42.0.20",
              "mac": "52:54:00:00:00:01", "ib_guid": None},
         ])
-        self.assertEqual(lines, ["dhcp-host=52:54:00:00:00:01,10.42.0.20,cn01\n"])
+        self.assertEqual(lines, ["52:54:00:00:00:01,10.42.0.20,cn01\n"])
 
     def test_guid_entry_renders_an_option61_form(self):
         lines = render_dnsmasq.render_entries([
@@ -44,7 +44,7 @@ class RenderEntriesTest(unittest.TestCase):
         ])
         client_id = ib_guid.guid_to_client_id(PORT_GUID)
         self.assertEqual(
-            lines, [f"dhcp-host=id:{client_id},10.42.0.20,cn01\n"])
+            lines, [f"id:{client_id},10.42.0.20,cn01\n"])
 
     def test_an_interface_with_both_identifiers_gets_both_lines(self):
         lines = render_dnsmasq.render_entries([
@@ -52,8 +52,8 @@ class RenderEntriesTest(unittest.TestCase):
              "mac": "52:54:00:00:00:01", "ib_guid": PORT_GUID},
         ])
         self.assertEqual(len(lines), 2)
-        self.assertTrue(any(line.startswith("dhcp-host=52:") for line in lines))
-        self.assertTrue(any(line.startswith("dhcp-host=id:") for line in lines))
+        self.assertTrue(any(line.startswith("52:") for line in lines))
+        self.assertTrue(any(line.startswith("id:") for line in lines))
 
     def test_unusable_guid_adds_nothing(self):
         lines = render_dnsmasq.render_entries([
