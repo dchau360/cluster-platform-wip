@@ -87,6 +87,27 @@ else
   changed "nftables table inet $NFT_TABLE installed"
 fi
 
+# Node to node. Docker (NetBox) loads br_netfilter, so frames bridged between
+# two node taps traverse iptables FORWARD, whose policy Docker sets to drop.
+# Head-to-node traffic is not forwarded and never notices; node-to-node is
+# silently dropped, which breaks every multi-node Slurm step. Accept traffic
+# that both enters and leaves the bridge, in DOCKER-USER (the chain Docker
+# leaves alone) when it exists. Traffic leaving the segment is still dropped
+# by the table above.
+if [[ "$(cat /proc/sys/net/bridge/bridge-nf-call-iptables 2>/dev/null || echo 0)" == 1 ]]; then
+  chain=FORWARD
+  sudo iptables -n -L DOCKER-USER >/dev/null 2>&1 && chain=DOCKER-USER
+  rule=(-i "$PROV_BRIDGE" -o "$PROV_BRIDGE" -m comment --comment cluster-lab-segment -j ACCEPT)
+  if sudo iptables -C "$chain" "${rule[@]}" 2>/dev/null; then
+    ok "iptables $chain accepts traffic within $PROV_BRIDGE"
+  else
+    sudo iptables -I "$chain" 1 "${rule[@]}"
+    changed "iptables $chain accepts traffic within $PROV_BRIDGE"
+  fi
+else
+  ok "bridge netfilter off; traffic within $PROV_BRIDGE is not filtered"
+fi
+
 # --- dnsmasq configuration -------------------------------------------------
 
 ensure_dir "$LAB_STATE_DIR/dnsmasq" 0755

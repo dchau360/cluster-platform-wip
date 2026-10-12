@@ -4,10 +4,10 @@
 Two identifiers, two reservation styles, both from the source of truth:
 
 * a MAC address, on the provisioning interface -> the classic
-  ``dhcp-host=<mac>,<name>,<ip>``;
+  ``<mac>,<ip>,<name>`` entry in a ``dhcp-hostsfile``;
 * an InfiniBand port GUID, on any interface that carries one -> an
   option-61 (client-identifier) reservation,
-  ``dhcp-host=id:<client-id>,<name>,<ip>``.
+  ``id:<client-id>,<ip>,<name>``.
 
 The GUID path is real code exercised against **synthetic** GUID data only:
 the lab has no InfiniBand hardware. See
@@ -17,6 +17,7 @@ docs/ib-and-dhcp-option61.md.
 unit-tested on a machine that has no NetBox client installed.
 """
 import os
+import stat
 import tempfile
 from pathlib import Path
 
@@ -38,7 +39,7 @@ def render_entries(entries):
         if not hostname or not ip:
             continue
         if entry.get("mac"):
-            lines.append(f"dhcp-host={entry['mac']},{hostname},{ip}\n")
+            lines.append(f"{entry['mac']},{ip},{hostname}\n")
         guid_line = reservation_line(hostname, ip, entry.get("ib_guid"))
         if guid_line is not None:
             lines.append(guid_line)
@@ -58,6 +59,22 @@ def entry_hostname(address, device):
     return getattr(device, "name", None)
 
 
+def reservation_address(addresses, interface_name):
+    """Choose the authoritative address when discovery left an old lease.
+
+    The provisioning address with a DNS name is the node identity seeded by
+    the platform. Discovery can also leave a second, unnamed DHCP address on
+    the interface; pynetbox does not promise result ordering, so blindly using
+    the first address can perpetuate that temporary lease forever.
+    """
+    if interface_name == "provisioning":
+        named = [address for address in addresses
+                 if (getattr(address, "dns_name", None) or "").strip()]
+        if named:
+            return named[0]
+    return addresses[0]
+
+
 def netbox_entries(nb):
     """Every addressed interface, as a reservation entry."""
     entries = []
@@ -65,11 +82,12 @@ def netbox_entries(nb):
         addresses = list(nb.ipam.ip_addresses.filter(interface_id=interface.id))
         if not addresses:
             continue
-        ip = str(addresses[0].address).split("/")[0]
+        address = reservation_address(addresses, interface.name)
+        ip = str(address.address).split("/")[0]
         device = getattr(interface, "device", None)
         custom = getattr(interface, "custom_fields", None) or {}
         entries.append({
-            "hostname": entry_hostname(addresses[0], device),
+            "hostname": entry_hostname(address, device),
             "ip": ip,
             # Only the provisioning interface keys on MAC. An IB interface
             # may report no 6-byte MAC at all, and a second MAC-keyed
@@ -78,6 +96,22 @@ def netbox_entries(nb):
             "ib_guid": custom.get("ib_guid"),
         })
     return entries
+
+
+def write_output(target, lines):
+    """Atomically install a dnsmasq-readable reservation file."""
+    content = "".join(lines)
+    if target.exists() and target.read_text() == content:
+        if stat.S_IMODE(target.stat().st_mode) == 0o644:
+            return False
+        target.chmod(0o644)
+        return True
+    with tempfile.NamedTemporaryFile("w", dir=target.parent, delete=False) as out:
+        out.writelines(lines)
+        temporary = Path(out.name)
+    temporary.chmod(0o644)
+    temporary.replace(target)
+    return True
 
 
 def main():
@@ -90,10 +124,10 @@ def main():
         "DNSMASQ_NETBOX_OUTPUT",
         "/var/lib/cluster-lab/dnsmasq/netbox-hosts.conf"))
     target.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", dir=target.parent, delete=False) as out:
-        out.writelines(lines)
-        temporary = out.name
-    Path(temporary).replace(target)
+    # Say whether anything changed, so the role restarts dnsmasq exactly when
+    # the reservations moved. A renderer that always reported "unchanged"
+    # left dnsmasq serving stale reservations until something else restarted it.
+    print("changed" if write_output(target, lines) else "unchanged")
 
 
 if __name__ == "__main__":  # pragma: no cover

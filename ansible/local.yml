@@ -27,9 +27,11 @@
   tasks:
     # set_fact, not a play var: a play var is evaluated lazily, so `now()`
     # there would be read at report time and every duration would be zero.
+    # now(), not now(utc=true): the UTC datetime is naive, and .timestamp()
+    # reads a naive datetime as local time, skewing the epoch by the zone.
     - name: Note when the play started
       ansible.builtin.set_fact:
-        cluster_play_started: "{{ now(utc=true).timestamp() }}"
+        cluster_play_started: "{{ now().timestamp() }}"
 
     - name: Read the image reference this node was provisioned from
       ansible.builtin.slurp:

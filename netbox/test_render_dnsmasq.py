@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -35,7 +36,7 @@ class RenderEntriesTest(unittest.TestCase):
             {"hostname": "cn01", "ip": "10.42.0.20",
              "mac": "52:54:00:00:00:01", "ib_guid": None},
         ])
-        self.assertEqual(lines, ["dhcp-host=52:54:00:00:00:01,cn01,10.42.0.20\n"])
+        self.assertEqual(lines, ["52:54:00:00:00:01,10.42.0.20,cn01\n"])
 
     def test_guid_entry_renders_an_option61_form(self):
         lines = render_dnsmasq.render_entries([
@@ -44,7 +45,7 @@ class RenderEntriesTest(unittest.TestCase):
         ])
         client_id = ib_guid.guid_to_client_id(PORT_GUID)
         self.assertEqual(
-            lines, [f"dhcp-host=id:{client_id},cn01,10.42.0.20\n"])
+            lines, [f"id:{client_id},10.42.0.20,cn01\n"])
 
     def test_an_interface_with_both_identifiers_gets_both_lines(self):
         lines = render_dnsmasq.render_entries([
@@ -52,8 +53,8 @@ class RenderEntriesTest(unittest.TestCase):
              "mac": "52:54:00:00:00:01", "ib_guid": PORT_GUID},
         ])
         self.assertEqual(len(lines), 2)
-        self.assertTrue(any(line.startswith("dhcp-host=52:") for line in lines))
-        self.assertTrue(any(line.startswith("dhcp-host=id:") for line in lines))
+        self.assertTrue(any(line.startswith("52:") for line in lines))
+        self.assertTrue(any(line.startswith("id:") for line in lines))
 
     def test_unusable_guid_adds_nothing(self):
         lines = render_dnsmasq.render_entries([
@@ -76,6 +77,16 @@ class RenderEntriesTest(unittest.TestCase):
         self.assertEqual(render_dnsmasq.render_entries([entry, entry]),
                          render_dnsmasq.render_entries([entry]))
 
+    def test_output_is_readable_by_unprivileged_dnsmasq(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "netbox-hosts.conf"
+            self.assertTrue(render_dnsmasq.write_output(target, ["entry\n"]))
+            self.assertEqual(target.stat().st_mode & 0o777, 0o644)
+            target.chmod(0o600)
+            self.assertTrue(render_dnsmasq.write_output(target, ["entry\n"]))
+            self.assertEqual(target.stat().st_mode & 0o777, 0o644)
+            self.assertFalse(render_dnsmasq.write_output(target, ["entry\n"]))
+
 
 class EntryHostnameTest(unittest.TestCase):
     """The DHCP hostname is the address's DNS name, not the rack position."""
@@ -93,6 +104,23 @@ class EntryHostnameTest(unittest.TestCase):
         address = self._Obj(dns_name="")
         device = self._Obj(name="rack-a-u01")
         self.assertEqual(render_dnsmasq.entry_hostname(address, device), "rack-a-u01")
+
+    def test_named_provisioning_address_wins_over_discovery_lease(self):
+        temporary = self._Obj(address="10.42.0.135/24", dns_name="")
+        canonical = self._Obj(address="10.42.0.20/24", dns_name="cn01.lab.internal")
+        self.assertIs(
+            render_dnsmasq.reservation_address(
+                [temporary, canonical], "provisioning"),
+            canonical,
+        )
+
+    def test_other_interfaces_keep_their_first_address(self):
+        first = self._Obj(address="10.43.0.20/24", dns_name="")
+        second = self._Obj(address="10.43.0.120/24", dns_name="cn01-ib")
+        self.assertIs(
+            render_dnsmasq.reservation_address([first, second], "ib0"),
+            first,
+        )
 
 
 if __name__ == "__main__":

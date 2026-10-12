@@ -188,4 +188,49 @@ required check.
 
 ## Evidence
 
-Recorded from the lab. See the sections below and the SRE-7 issue thread.
+Recorded on the lab at N=2 on 2026-10-12; the full output is in the SRE-7
+issue thread.
+
+| Check | Result |
+|-------|--------|
+| Self-configuration, no inbound SSH | `root@<node>:22` refused; the serial log shows `cluster-pull` cloning `deployed` from the head mirror, fetching facts from the node API, installing the overlay Munge key |
+| Idempotence | second pull run on each node `ok=38 changed=0 failed=0`; head converge `ok=119 changed=0` |
+| Slurm | `sinfo`: both nodes `idle`; `sbatch -N2 -n4` ran two ranks on each node |
+| Burn-in gate | cn02's disk throttled to 4 MiB/s from the hypervisor: gate set it `failed` (`disk write_mib_per_second 4.0 < 20.0`) and cn01 `active`; throttle removed, cn02 re-staged, re-burned at 1299.5 MiB/s, gate set it `active` |
+| slurmctld down at node start | pull run succeeded; `slurmd` retried the config fetch for ~2 min and registered 10 s after slurmctld started |
+| Mirror unreachable | run reported `failed` (`fetch deployed from mirror (exit 2)`), checkout and services untouched, node stayed `idle`; `convergence-status` exits non-zero |
+| Bad commit | a variable typo passes yamllint and ansible-lint; `pull check-mode` fails it; `make promote` prints `REFUSED`; a direct push to `deployed` is rejected by branch protection |
+| Promote / rollback | one ref move each way (rollback 2.95 s); both nodes converged on whichever commit `deployed` named |
+| Stale detection | `CONVERGENCE_STALE_SECONDS=60 make convergence-status` flags both nodes `STALE` and exits 2; the Prometheus rules are loaded and inactive while nodes are healthy |
+| Rolling update | `sha-54a0b45db3a1` to `sha-2c46934beb6c` across both nodes in 190 s while 9 jobs ran: 9/9 `COMPLETED Restarts=0 ExitCode=0:0` |
+| Rollback under failure | rollout to an image without `slurmd`: cn01's pull reported `failed`, cn01 was put back on `sha-2c46934beb6c`, resumed, rollout stopped; cn02 never touched; 5/5 jobs completed |
+
+Per-node phases of the rollback drill (`make timings`):
+
+```
+PHASE                    NODE          SECONDS   STATUS
+rolling-drain            cn01           62.464       ok
+rolling-reimage          cn01            1.402       ok   (to the broken image)
+rolling-reimage          cn01            1.344       ok   (back to the previous image)
+rolling-healthy          cn01           42.439       ok
+day2-rolling_update      -             236.623     fail
+```
+
+Faults the drills found, all fixed:
+
+- The controller's `munged` predated the cluster key (a lost handler), so
+  slurmctld rejected every node. The role now restarts a `munged` older than
+  its key, judged by wall clock because WSL's monotonic clock drifts.
+- The source-built image had no `slurm` account, so configless `slurmd`
+  exited. `cluster_slurm_user` is created by `slurm_compute` and shipped in
+  the image.
+- Docker's `br_netfilter` dropped node-to-node frames on the bridge; batch
+  steps failed while `srun` from the head worked. `net-up.sh` accepts traffic
+  within the segment.
+- Every push to `deployed` started a CI run the next promotion cancelled,
+  leaving a red check on a green commit. CI skips `deployed`, and
+  `promote.sh` judges the latest run per check.
+- Day-2 per-node timings were written but unreadable by the report, and
+  `now(utc=true).timestamp()` skewed starts by the zone offset.
+- The node API exported convergence times an hour old (DST in `mktime`) and
+  exported planned devices, so both alerts fired on a healthy fleet.

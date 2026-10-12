@@ -27,6 +27,50 @@
     enabled: true
     state: started
 
+# A notified restart is lost if the run that changed the key fails before
+# handlers run; the next run then sees the key unchanged and munged keeps
+# the old key in memory, rejecting every node. Judge the daemon instead of
+# the handler: a munged that started before its key was written is stale.
+- name: Read when the controller's Munge key was written
+  become: true
+  ansible.builtin.stat:
+    path: /etc/munge/munge.key
+    get_checksum: false
+  register: slurm_controller_munge_key
+
+# Wall clock, not ActiveEnterTimestampMonotonic: under WSL the monotonic
+# clock and /proc/uptime drift apart by hours.
+- name: Read when munged started
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    argv: [systemctl, show, munge, --property=ActiveEnterTimestamp, --value, --timestamp=unix]
+  register: slurm_controller_munged_started
+  changed_when: false
+
+- name: Restart a munged that still holds an older key
+  become: true
+  when:
+    - not ansible_check_mode
+    - (slurm_controller_munged_started.stdout | trim | regex_replace('^@', '') | int)
+      < (slurm_controller_munge_key.stat.mtime | int)
+  ansible.builtin.systemd_service:
+    name: munge
+    state: restarted
+  notify: Restart slurmctld
+
+- name: Read the Slurm service account
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ cluster_slurm_user.name }}"
+
+- name: Refuse a Slurm account whose UID the nodes would not share
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.getent_passwd[cluster_slurm_user.name][1] | int == cluster_slurm_user.uid | int
+    fail_msg: >-
+      {{ cluster_slurm_user.name }} has UID {{ ansible_facts.getent_passwd[cluster_slurm_user.name][1] }}
+      on the controller; cluster_slurm_user.uid is {{ cluster_slurm_user.uid }}.
+
 - name: Create the job user groups
   become: true
   ansible.builtin.group:

@@ -11,8 +11,11 @@
 name: ci
 
 on:
+  # Not on `deployed`: a commit reaches it only after CI passed on that exact
+  # commit, and a second run there adds nothing but a chance to be cancelled
+  # by the next promotion, which would leave a red check on a green commit.
   push:
-    branches: ["**"]
+    branches: ["**", "!deployed"]
   pull_request:
   workflow_dispatch:
 
@@ -28,7 +31,7 @@ env:
   # The node image local.yml is tested in: the image nodes boot, with the
   # ansible-core nodes run. Pinned, so a test result names the image it ran
   # against; bump it in the same change that deploys a new tag.
-  COMPUTE_IMAGE: ghcr.io/dchau360/cluster-images-wip/compute-slurm:sha-54a0b45db3a1
+  COMPUTE_IMAGE: ghcr.io/dchau360/cluster-images-wip/compute-slurm:sha-2c46934beb6c
 
 jobs:
   secrets:

@@ -75,7 +75,7 @@ class ReservationLineTest(unittest.TestCase):
         client_id = ib_guid.guid_to_client_id(PORT_GUID)
         self.assertEqual(
             ib_guid.reservation_line("cn01", "10.42.0.20", PORT_GUID),
-            f"dhcp-host=id:{client_id},cn01,10.42.0.20\n")
+            f"id:{client_id},10.42.0.20,cn01\n")
 
     def test_line_is_none_when_anything_is_missing(self):
         self.assertIsNone(ib_guid.reservation_line("", "10.42.0.20", PORT_GUID))
@@ -135,7 +135,7 @@ class RenderReservationsTest(unittest.TestCase):
         lines = ib_guid.render_reservations(entries)
         self.assertEqual(len(lines), 2)
         self.assertEqual(lines, sorted(lines))
-        self.assertTrue(all(line.startswith("dhcp-host=id:") for line in lines))
+        self.assertTrue(all(line.startswith("id:") for line in lines))
         self.assertFalse(any("cn03" in line for line in lines))
 
 

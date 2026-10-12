@@ -77,8 +77,8 @@
           - --bs=1M
           - "--size={{ burnin_disk_size }}"
           - --direct=1
-          - --ioengine=libaio
-          - --iodepth=8
+          # Built into fio; the node image ships no libaio engine package.
+          - --ioengine=psync
           - --verify=crc32c
           - --do_verify=1
           - --output-format=json
@@ -95,12 +95,24 @@
 
     - name: Assemble the raw measurements
       vars:
-        burnin_cpu_yaml: >-
-          {{ (burnin_metrics.results[0].content | default('') | b64decode | from_yaml) or {} }}
-        burnin_mem_yaml: >-
-          {{ (burnin_metrics.results[1].content | default('') | b64decode | from_yaml) or {} }}
+        # stress-ng 0.15 emits a YAML-like report containing an unquoted
+        # colon in its generator string. PyYAML rejects the whole document,
+        # so extract only the numeric metric we own instead of trusting that
+        # third-party output to be valid YAML.
+        burnin_cpu_text: >-
+          {{ burnin_metrics.results[0].content | default('') | b64decode }}
+        burnin_mem_text: >-
+          {{ burnin_metrics.results[1].content | default('') | b64decode }}
+        # fio prints notes and errors ahead of its JSON report on stdout, so
+        # take only the top-level object; anything else is a failed check.
+        # ansible-core 2.14 (the node's) may already have turned it into a
+        # dict when templating, newer releases leave it a string.
+        burnin_fio_json: >-
+          {{ burnin_fio.stdout | default('')
+             | regex_search('(?ms)^[{].*^[}]') | default('{}', true) }}
         burnin_fio_job: >-
-          {{ ((burnin_fio.stdout | default('{}') | from_json).jobs | default([{}])) | first }}
+          {{ ((burnin_fio_json if burnin_fio_json is mapping
+               else burnin_fio_json | from_json).jobs | default([{}])) | first }}
       ansible.builtin.set_fact:
         burnin_body:
           reported_at: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}"
@@ -111,23 +123,27 @@
               workers: "{{ ansible_processor_vcpus | int }}"
               seconds: "{{ burnin_cpu_seconds | int }}"
               bogo_ops_per_second: >-
-                {{ ((burnin_cpu_yaml.metrics | default([{}]) | first)['bogo-ops-per-second-real-time']
-                    | default(0)) | float }}
+                {{ (burnin_cpu_text
+                    | regex_findall('(?m)^[ ]*bogo-ops-per-second-real-time:[ ]*([0-9.]+)')
+                    | first | default(0)) | float }}
             memory:
               exit_code: "{{ burnin_memory.rc }}"
               memtotal_mib: "{{ ansible_memtotal_mb | int }}"
               percent: "{{ burnin_memory_percent | int }}"
               bogo_ops_per_second: >-
-                {{ ((burnin_mem_yaml.metrics | default([{}]) | first)['bogo-ops-per-second-real-time']
-                    | default(0)) | float }}
+                {{ (burnin_mem_text
+                    | regex_findall('(?m)^[ ]*bogo-ops-per-second-real-time:[ ]*([0-9.]+)')
+                    | first | default(0)) | float }}
             disk:
               device: "{{ burnin_disk }}"
               exit_code: "{{ burnin_fio.rc | default(-1) }}"
               job_error: "{{ burnin_fio_job.error | default(-1) | int }}"
               write_mib_per_second: >-
-                {{ ((burnin_fio_job.write.bw_bytes | default(0)) / 1048576) | round(1) }}
+                {{ ((((burnin_fio_job.write | default({})).bw_bytes | default(0))
+                    / 1048576)) | round(1) }}
               verify_read_mib_per_second: >-
-                {{ ((burnin_fio_job.read.bw_bytes | default(0)) / 1048576) | round(1) }}
+                {{ ((((burnin_fio_job.read | default({})).bw_bytes | default(0))
+                    / 1048576)) | round(1) }}
 
     - name: Report the measurements to NetBox through the head node
       when: not ansible_check_mode

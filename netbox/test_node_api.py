@@ -9,6 +9,8 @@ addresses and MACs below are lab-internal or synthetic.
 from __future__ import annotations
 
 import importlib.util
+import os
+import time
 import unittest
 from pathlib import Path
 
@@ -148,6 +150,15 @@ class BurninValidationTest(unittest.TestCase):
         self.assertNotIn("passed", fields["burnin_results"]["checks"]["cpu"])
         self.assertEqual(fields["burnin_results"]["checks"]["cpu"]["bogo_ops_per_second"], 812.5)
 
+    def test_templated_numbers_are_stored_as_numbers(self):
+        body = {**self.BODY, "checks": {"cpu": {"bogo_ops_per_second": "812.5", "exit_code": "0"},
+                                        "memory": {"exit_code": "-1"},
+                                        "disk": {"device": "vda", "write_mib_per_second": "0.0"}}}
+        checks = api.validate_burnin(body)["burnin_results"]["checks"]
+        self.assertEqual(checks["cpu"], {"bogo_ops_per_second": 812.5, "exit_code": 0})
+        self.assertEqual(checks["memory"]["exit_code"], -1)
+        self.assertEqual(checks["disk"], {"device": "vda", "write_mib_per_second": 0.0})
+
     def test_every_check_must_be_present(self):
         body = {**self.BODY, "checks": {"cpu": {}}}
         with self.assertRaises(api.BadRequest):
@@ -160,6 +171,25 @@ class ObservabilityTest(unittest.TestCase):
         self.assertIn('cluster_node_convergence_success{device="rack-a-u01",hostname="cn01"} 1', text)
         self.assertIn("cluster_node_last_converged_timestamp_seconds{", text)
         self.assertIn('git_sha="abc1234"', text)
+
+    def test_timestamps_are_utc_whatever_the_local_zone(self):
+        saved = os.environ.get("TZ")
+        try:
+            for zone in ("UTC", "America/Chicago", "Australia/Sydney"):
+                os.environ["TZ"] = zone
+                time.tzset()
+                self.assertEqual(api._epoch("2026-10-12T20:26:00Z"), 1791836760.0)
+                self.assertEqual(api._epoch("2026-01-12T20:26:00Z"), 1768249560.0)
+        finally:
+            if saved is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = saved
+            time.tzset()
+
+    def test_devices_that_do_not_run_pulls_are_not_exported(self):
+        rows = [({"name": "rack-a-u03", "status": {"value": "planned"}, "custom_fields": {}}, None, None)]
+        self.assertNotIn("rack-a-u03", api.render_metrics(rows))
 
     def test_sd_targets_come_from_netbox(self):
         sd = api.render_sd(api.fleet(FakeNetBox(), "compute"), 9100)

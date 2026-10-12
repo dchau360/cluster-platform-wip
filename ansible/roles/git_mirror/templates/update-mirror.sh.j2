@@ -12,4 +12,9 @@ if [ ! -d "$published" ]; then
 fi
 git -C "$published" fetch "$mirror" '+refs/heads/deployed:refs/heads/deployed'
 git -C "$published" symbolic-ref HEAD refs/heads/deployed
+# Publish `deployed` and nothing else. Nodes pin it; a branch that is not
+# served cannot be pulled by mistake.
+git -C "$published" for-each-ref --format='%(refname)' refs/heads refs/tags \
+  | grep -vx refs/heads/deployed \
+  | while read -r ref; do git -C "$published" update-ref -d "$ref"; done
 git -C "$published" update-server-info
