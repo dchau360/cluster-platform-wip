@@ -513,7 +513,8 @@
          | combine({(lab_node_name_prefix ~ ('%02d' | format(item.item))):
                     ((item.json.results | default([]) | map(attribute='address') | first | default(''))
                       | regex_replace('/.*$', ''))
-                    or (warewulf_server_node_ip_prefix ~ '.' ~ ((warewulf_server_node_ip_offset | int) + item.item))}) }}
+                    or (warewulf_server_node_ip_prefix ~ '.'
+                        ~ ((warewulf_server_node_ip_offset | int) + item.item))}) }}
   loop: "{{ warewulf_server_netbox_addresses.results | default([]) }}"
   loop_control:
     label: "{{ lab_node_name_prefix }}{{ '%02d' | format(item.item) }}"
