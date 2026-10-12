@@ -4,10 +4,10 @@
 Two identifiers, two reservation styles, both from the source of truth:
 
 * a MAC address, on the provisioning interface -> the classic
-  ``dhcp-host=<mac>,<name>,<ip>``;
+  ``dhcp-host=<mac>,<ip>,<name>``;
 * an InfiniBand port GUID, on any interface that carries one -> an
   option-61 (client-identifier) reservation,
-  ``dhcp-host=id:<client-id>,<name>,<ip>``.
+  ``dhcp-host=id:<client-id>,<ip>,<name>``.
 
 The GUID path is real code exercised against **synthetic** GUID data only:
 the lab has no InfiniBand hardware. See
@@ -38,7 +38,7 @@ def render_entries(entries):
         if not hostname or not ip:
             continue
         if entry.get("mac"):
-            lines.append(f"dhcp-host={entry['mac']},{hostname},{ip}\n")
+            lines.append(f"dhcp-host={entry['mac']},{ip},{hostname}\n")
         guid_line = reservation_line(hostname, ip, entry.get("ib_guid"))
         if guid_line is not None:
             lines.append(guid_line)

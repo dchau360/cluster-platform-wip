@@ -43,7 +43,7 @@ is itself a fact — and keying a reservation on an all-zero GUID would make
 every uninitialized port match it.
 
 **Reservation** (`ib_guid.reservation_line`) renders
-`dhcp-host=id:<client-id>,<hostname>,<ip>`. `render_dnsmasq.py` reads an
+`dhcp-host=id:<client-id>,<ip>,<hostname>`. `render_dnsmasq.py` reads an
 interface's `ib_guid` custom field from NetBox and emits that line alongside
 the MAC-keyed reservation it already produced for the provisioning
 interface. The MAC path is unchanged and still keys only the provisioning
