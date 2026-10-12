@@ -46,6 +46,7 @@ head = ("device", "status", "commit", "image", "result", "seconds", "last run", 
 w = [max(len(str(r[i])) for r in rows + [head]) for i in range(len(head))]
 for r in [head] + rows:
     print("  ".join(str(v).ljust(w[i]) for i, v in enumerate(r)))
-print(f"\ndeployed ref: {deployed or \"unknown\"}   stale after: {int(stale)}s")
+display_deployed = deployed or "unknown"
+print(f"\ndeployed ref: {display_deployed}   stale after: {int(stale)}s")
 sys.exit(1 if bad else 0)
 ' "$STALE" "$deployed"
