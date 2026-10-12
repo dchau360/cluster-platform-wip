@@ -52,11 +52,20 @@ else
 fi
 
 echo
-echo "== check 3: no hardcoded node-name list"
+ echo "== check 3: no hardcoded node-name list"
 # Two or more node names on one line, separated by anything.
+#
+# A measured results document is exempt: docs/measurements.md records the
+# per-node timings of a run that actually happened, so it names the nodes that
+# ran. That is evidence, not a deployment list, and rewriting it to avoid the
+# pattern would hide what was measured. Code and configuration are still held
+# to the rule; only the results table is set aside.
 prefix="$(grep -E '^NODE_NAME_PREFIX=' "$ENV_EXAMPLE" | cut -d= -f2)"
 prefix="${prefix:-cn}"
-hits="$(git grep -I -n -E "\\b${prefix}[0-9]{2}\\b[^0-9a-zA-Z]+\\b${prefix}[0-9]{2}\\b" -- "${FILES[@]}" || true)"
+MEASUREMENT_DOCS=('docs/measurements.md')
+exclude_args=()
+for doc in "${MEASUREMENT_DOCS[@]}"; do exclude_args+=(":(exclude)${doc}"); done
+hits="$(git grep -I -n -E "\\b${prefix}[0-9]{2}\\b[^0-9a-zA-Z]+\\b${prefix}[0-9]{2}\\b" -- "${FILES[@]}" "${exclude_args[@]}" 2>/dev/null || true)"
 if [[ -n "$hits" ]]; then
   while IFS= read -r line; do finding "hardcoded node list: $line"; done <<<"$hits"
 else
