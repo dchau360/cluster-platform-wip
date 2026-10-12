@@ -18,6 +18,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/lib/common.sh"
 # shellcheck source=lib/timing.sh
 source "$HERE/lib/timing.sh"
+# shellcheck source=lib/converge.sh
+source "$HERE/lib/converge.sh"
 lab_load_env
 counters_init
 timing_init
@@ -25,6 +27,13 @@ timing_init
 log "demo with NODE_COUNT=${NODE_COUNT}, run ${LAB_RUN_ID}"
 
 timed platform-up "" -- bash "$HERE/up.sh"
+
+# The roles own the node definitions and the reservations, and the node
+# count is a variable they read from the environment. Without this, N=4
+# would start four VMs but Warewulf would only know the nodes from the last
+# converge, and the ones it does not know cannot fetch an iPXE script.
+timed converge "" -- converge_run
+
 timed nodes-up    "" -- bash "$HERE/nodes-up.sh"
 
 echo
