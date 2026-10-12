@@ -104,7 +104,8 @@
         burnin_mem_text: >-
           {{ burnin_metrics.results[1].content | default('') | b64decode }}
         burnin_fio_job: >-
-          {{ ((burnin_fio.stdout | default('{}') | from_json).jobs | default([{}])) | first }}
+          {{ ((burnin_fio.stdout | default('{}', true) | from_json).jobs
+              | default([{}])) | first }}
       ansible.builtin.set_fact:
         burnin_body:
           reported_at: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}"
@@ -131,9 +132,11 @@
               exit_code: "{{ burnin_fio.rc | default(-1) }}"
               job_error: "{{ burnin_fio_job.error | default(-1) | int }}"
               write_mib_per_second: >-
-                {{ ((burnin_fio_job.write.bw_bytes | default(0)) / 1048576) | round(1) }}
+                {{ ((((burnin_fio_job.write | default({})).bw_bytes | default(0))
+                    / 1048576)) | round(1) }}
               verify_read_mib_per_second: >-
-                {{ ((burnin_fio_job.read.bw_bytes | default(0)) / 1048576) | round(1) }}
+                {{ ((((burnin_fio_job.read | default({})).bw_bytes | default(0))
+                    / 1048576)) | round(1) }}
 
     - name: Report the measurements to NetBox through the head node
       when: not ansible_check_mode
