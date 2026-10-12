@@ -129,6 +129,13 @@ warewulf_server_mac_oui: "{{ lookup('env', 'PROV_MAC_OUI') | default('52:54:00',
 warewulf_server_node_ip_offset: "{{ lab_node_ip_offset | default(10) }}"
 warewulf_server_node_netdev: eth0
 
+# The address prefix a node's host part is appended to. `warewulf_server_network`
+# is a network address (10.42.0.0), so appending `.N` to it produced
+# 10.42.0.0.N, which `wwctl node add` rejects as an invalid IP. Drop the
+# trailing zero octet once and append to the result.
+warewulf_server_node_ip_prefix: >-
+  {{ warewulf_server_network | regex_replace('\.[0-9]+$', '') }}
+
 # Warewulf keeps its own DHCP/TFTP service names in the config. The lab's
 # dnsmasq is owned by the harness (scripts/net-up.sh) and is the only DHCP
 # server on the segment, so Warewulf must not start a second one.

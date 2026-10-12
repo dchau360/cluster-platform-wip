@@ -334,7 +334,7 @@
   ansible.builtin.command:
     cmd: >-
       wwctl node add {{ lab_node_name_prefix }}{{ '%02d' | format(item) }}
-      --ipaddr {{ warewulf_server_network }}.{{ (warewulf_server_node_ip_offset | int) + item }}
+      --ipaddr {{ warewulf_server_node_ip_prefix }}.{{ (warewulf_server_node_ip_offset | int) + item }}
       --netdev {{ warewulf_server_node_netdev }}
       --hwaddr {{ warewulf_server_mac_oui }}:00:{{ '%02x' | format(item // 256) }}:{{ '%02x' | format(item % 256) }}
   loop: "{{ range(1, (lab_node_count | int) + 1) | list }}"
