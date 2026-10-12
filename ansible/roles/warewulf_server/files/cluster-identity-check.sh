@@ -32,6 +32,14 @@ status=0
 
 echo "=== cluster identity check ==="
 
+# The runtime-overlay refresh unit is the other half of this task. Before the
+# fix it exited at startup with a missing configuration path, and the boot
+# console carried a `[FAILED]` line instead of the proof below. Its state and
+# its own log belong in the transcript next to the files it delivers.
+wwclient_state="$(systemctl show -p ActiveState --value wwclient.service 2>/dev/null || true)"
+echo "wwclient.service ActiveState=${wwclient_state:-unknown}"
+journalctl -u wwclient.service --no-pager -n 5 -o cat 2>/dev/null | sed 's/^/wwclient: /' || true
+
 for f in "${IDENTITY_FILES[@]}"; do
   if [[ -e "$f" ]]; then
     stat -c 'present %n mode=%a owner=%u:%g size=%s' "$f"
