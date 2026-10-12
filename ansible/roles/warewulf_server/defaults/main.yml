@@ -8,7 +8,9 @@ warewulf_server_source_archive: >-
 warewulf_server_source_dir: >-
   {{ warewulf_server_source_root }}/warewulf-{{ warewulf_server_version }}
 warewulf_server_source_url: >-
-  https://github.com/warewulf/warewulf/releases/download/v{{ warewulf_server_version }}/warewulf-{{ warewulf_server_version }}.tar.gz
+  {{ 'https://github.com/warewulf/warewulf/releases/download/v'
+     ~ warewulf_server_version ~ '/warewulf-'
+     ~ warewulf_server_version ~ '.tar.gz' }}
 warewulf_server_binary: /usr/local/bin/wwctl
 warewulf_server_packages:
   - build-essential
