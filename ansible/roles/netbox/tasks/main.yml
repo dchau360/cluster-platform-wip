@@ -2,8 +2,65 @@
 - name: Install container runtime
   become: true
   ansible.builtin.package:
-    name: [docker.io, docker-compose-v2]
+    name: [docker.io, docker-compose-v2, openssl]
     state: present
+- name: Create the local NetBox secret directory
+  become: true
+  ansible.builtin.file:
+    path: /etc/cluster-lab
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+- name: Check for the local NetBox environment
+  become: true
+  ansible.builtin.stat:
+    path: /etc/cluster-lab/netbox.env
+  register: netbox_environment
+- name: Generate the NetBox database password
+  become: true
+  when: not netbox_environment.stat.exists
+  ansible.builtin.command: openssl rand -hex 32
+  register: netbox_database_password
+  changed_when: true
+  no_log: true
+- name: Generate the NetBox secret key
+  become: true
+  when: not netbox_environment.stat.exists
+  ansible.builtin.command: openssl rand -hex 64
+  register: netbox_secret_key
+  changed_when: true
+  no_log: true
+- name: Generate the NetBox API token
+  become: true
+  when: not netbox_environment.stat.exists
+  ansible.builtin.command: openssl rand -hex 20
+  register: netbox_api_token
+  changed_when: true
+  no_log: true
+- name: Create the local NetBox environment once
+  become: true
+  when: not netbox_environment.stat.exists
+  ansible.builtin.copy:
+    dest: /etc/cluster-lab/netbox.env
+    owner: root
+    group: root
+    mode: "0600"
+    content: |
+      DB_HOST=postgres
+      DB_NAME=netbox
+      DB_PASSWORD={{ netbox_database_password.stdout }}
+      DB_USER=netbox
+      POSTGRES_DB=netbox
+      POSTGRES_PASSWORD={{ netbox_database_password.stdout }}
+      POSTGRES_USER=netbox
+      REDIS_CACHE_HOST=redis
+      REDIS_HOST=redis
+      SECRET_KEY={{ netbox_secret_key.stdout }}
+      SUPERUSER_API_TOKEN={{ netbox_api_token.stdout }}
+      SUPERUSER_EMAIL=admin@localhost
+      SUPERUSER_NAME=admin
+  no_log: true
 - name: Create NetBox deployment directory
   become: true
   ansible.builtin.file:
@@ -17,7 +74,7 @@
     dest: /opt/cluster-netbox/compose.yml
     mode: "0640"
   notify: Restart NetBox
-- name: Enable NetBox service
+- name: Install NetBox systemd service
   become: true
   ansible.builtin.template:
     src: cluster-netbox.service.j2
