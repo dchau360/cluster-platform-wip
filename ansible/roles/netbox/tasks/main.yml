@@ -112,6 +112,30 @@
     mode: "0600"
   notify: Restart NetBox
   no_log: true
+- name: Check for a local NetBox API token pepper
+  become: true
+  ansible.builtin.command:
+    cmd: grep -q '^API_TOKEN_PEPPER_1=' /etc/cluster-lab/netbox.env
+  register: netbox_api_token_pepper_line
+  changed_when: false
+  failed_when: false
+  no_log: true
+- name: Generate a local NetBox API token pepper
+  become: true
+  when: netbox_api_token_pepper_line.rc != 0
+  ansible.builtin.command: openssl rand -hex 32
+  register: netbox_api_token_pepper
+  changed_when: true
+  no_log: true
+- name: Add the local NetBox API token pepper once
+  become: true
+  when: netbox_api_token_pepper_line.rc != 0
+  ansible.builtin.lineinfile:
+    path: /etc/cluster-lab/netbox.env
+    line: "API_TOKEN_PEPPER_1={{ netbox_api_token_pepper.stdout }}"
+    mode: "0600"
+  notify: Restart NetBox
+  no_log: true
 - name: Apply NetBox environment changes before API use
   ansible.builtin.meta: flush_handlers
 - name: Read the local NetBox environment
