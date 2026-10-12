@@ -27,6 +27,43 @@
     enabled: true
     state: started
 
+# A notified restart is lost if the run that changed the key fails before
+# handlers run; the next run then sees the key unchanged and munged keeps
+# the old key in memory, rejecting every node. Judge the daemon instead of
+# the handler: a munged that started before its key was written is stale.
+- name: Read when the controller's Munge key was written
+  become: true
+  ansible.builtin.stat:
+    path: /etc/munge/munge.key
+    get_checksum: false
+  register: slurm_controller_munge_key
+
+- name: Read when munged started
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    argv: [systemctl, show, munge, --property=ActiveEnterTimestampMonotonic, --value]
+  register: slurm_controller_munged_started
+  changed_when: false
+
+- name: Read the monotonic clock's offset from the epoch
+  when: not ansible_check_mode
+  ansible.builtin.shell:
+    cmd: echo $(( $(date +%s) - $(cut -d. -f1 /proc/uptime) ))
+  register: slurm_controller_boot_epoch
+  changed_when: false
+
+- name: Restart a munged that still holds an older key
+  become: true
+  when:
+    - not ansible_check_mode
+    - (slurm_controller_boot_epoch.stdout | int)
+      + ((slurm_controller_munged_started.stdout | int) // 1000000)
+      < (slurm_controller_munge_key.stat.mtime | int)
+  ansible.builtin.systemd_service:
+    name: munge
+    state: restarted
+  notify: Restart slurmctld
+
 - name: Create the job user groups
   become: true
   ansible.builtin.group:
