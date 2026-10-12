@@ -2,7 +2,7 @@
 - name: Install container runtime
   become: true
   ansible.builtin.package:
-    name: [docker.io, docker-compose-v2, openssl]
+    name: [docker.io, docker-compose-v2, openssl, python3-venv]
     state: present
 - name: Create the local NetBox secret directory
   become: true
@@ -88,3 +88,52 @@
     enabled: true
     state: started
     daemon_reload: true
+- name: Wait for the NetBox API
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8000/api/
+    status_code: 200
+  register: netbox_api_health
+  until: netbox_api_health.status == 200
+  retries: 60
+  delay: 5
+- name: Read the local NetBox environment
+  become: true
+  ansible.builtin.slurp:
+    src: /etc/cluster-lab/netbox.env
+  register: netbox_environment_file
+  no_log: true
+- name: Retain the runtime NetBox token for managed generators
+  ansible.builtin.set_fact:
+    netbox_runtime_token: >-
+      {{ (netbox_environment_file.content | b64decode
+          | regex_search('(?m)^SUPERUSER_API_TOKEN=(.+)$', '\1')).0 }}
+  no_log: true
+- name: Install the repository NetBox definition and seeder
+  become: true
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../netbox/"
+    dest: /opt/cluster-netbox/seed/
+    owner: root
+    group: root
+    mode: preserve
+- name: Create the NetBox seeder virtual environment
+  become: true
+  ansible.builtin.command:
+    cmd: python3 -m venv /opt/cluster-netbox/venv
+    creates: /opt/cluster-netbox/venv/bin/python
+- name: Install NetBox seeder dependencies
+  become: true
+  ansible.builtin.pip:
+    requirements: /opt/cluster-netbox/seed/requirements.txt
+    virtualenv: /opt/cluster-netbox/venv
+- name: Seed NetBox from the repository definition
+  become: true
+  ansible.builtin.command:
+    cmd: /opt/cluster-netbox/venv/bin/python /opt/cluster-netbox/seed/seed.py
+  environment:
+    NETBOX_TOKEN: "{{ netbox_runtime_token }}"
+    NETBOX_URL: http://127.0.0.1:8000
+    NODE_COUNT: "{{ lab_node_count }}"
+  register: netbox_seed_result
+  changed_when: "'changed=0' not in netbox_seed_result.stdout"
+  no_log: true

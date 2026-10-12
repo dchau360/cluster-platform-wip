@@ -15,7 +15,31 @@
     dest: /etc/dnsmasq.d/cluster.conf
     mode: "0644"
   notify: Restart dnsmasq
+- name: Create dnsmasq and TFTP state directories
+  become: true
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ lab_state_dir }}/dnsmasq"
+    - "{{ lab_state_dir }}/tftp"
+- name: Render dnsmasq reservations from NetBox
+  become: true
+  ansible.builtin.command:
+    cmd: /opt/cluster-netbox/venv/bin/python /usr/local/sbin/render-netbox-dnsmasq
+  environment:
+    NETBOX_TOKEN: "{{ netbox_runtime_token }}"
+    NETBOX_URL: http://127.0.0.1:8000
+  changed_when: false
+  notify: Restart dnsmasq
 - name: Enable dnsmasq
   become: true
   when: not ansible_check_mode
-  ansible.builtin.systemd_service: {name: dnsmasq, enabled: true, state: started}
+  ansible.builtin.systemd_service:
+    name: dnsmasq
+    enabled: true
+    masked: false
+    state: started
