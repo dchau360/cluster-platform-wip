@@ -121,7 +121,7 @@ cmd_boot() {
   # The override is only real if libvirt's persistent boot order changed.
   local order
   order="$("${VIRSH[@]}" dumpxml --inactive "$node" 2>/dev/null \
-    | grep -E "<boot order=" | tr -d ' ' | tr '\n' ' ')"
+    | grep -E "<boot order=" | sed -E 's/^[[:space:]]+//' | tr '\n' ' ')"
   changed "redfish $node boot $target ($bt); libvirt boot order: ${order:-unchanged}"
 }
 

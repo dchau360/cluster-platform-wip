@@ -53,16 +53,19 @@ caller can see the change rather than take it on faith.
 
 ```text
 $ scripts/redfish.sh power cn01 cycle
-changed: redfish cn01 power cycle (ForceRestart)
+changed redfish cn01 power cycle (ForceRestart)
 $ scripts/redfish.sh boot cn01 hd
-changed: redfish cn01 boot hd (Hdd); libvirt boot order: <boot order='1'/> (disk)
+changed redfish cn01 boot hd (Hdd); libvirt boot order: <boot order='1'/>
 $ scripts/redfish.sh boot cn01 pxe
-changed: redfish cn01 boot pxe (Pxe); libvirt boot order: <boot order='2'/> (disk) <boot order='1'/> (interface)
+changed redfish cn01 boot pxe (Pxe); libvirt boot order: <boot order='2'/> <boot order='1'/>
 ```
 
-The last two lines are the point: the network interface moves to boot order
-1 for PXE, and the disk moves to order 1 for HDD. The change is in the
-domain's persistent configuration, so it survives a restart.
+The last two lines are the point. Each line is one persistent `<boot
+order=...>` element from `virsh dumpxml --inactive`, in document order:
+the disk's first, the network interface's second. After the `hd` request
+the disk alone carries order 1; after the `pxe` request the interface moves
+to order 1 and the disk falls to order 2. The change is in the domain's
+persistent configuration, so it survives a restart.
 
 ## Configuration
 
