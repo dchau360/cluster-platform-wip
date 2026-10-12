@@ -1,0 +1,12 @@
+---
+plugin: netbox.netbox.nb_inventory
+api_endpoint: "{{ lookup('env', 'NETBOX_URL') }}"
+token: "{{ lookup('env', 'NETBOX_TOKEN') }}"
+validate_certs: true
+group_by:
+  - device_roles
+query_filters:
+  - status: active
+compose:
+  ansible_host: primary_ip4.address | default('') | regex_replace('/.*$', '')
+  rack_position_hostname: rack.name ~ '-u%02d' | format(position)

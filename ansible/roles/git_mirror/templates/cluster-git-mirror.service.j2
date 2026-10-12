@@ -1,0 +1,7 @@
+[Unit]
+Description=Fetch public cluster repository and publish deployed ref
+After=network-online.target
+[Service]
+Type=oneshot
+User=www-data
+ExecStart=/usr/local/sbin/update-cluster-mirror

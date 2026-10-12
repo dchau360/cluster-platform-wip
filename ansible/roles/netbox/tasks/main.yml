@@ -1,0 +1,32 @@
+---
+- name: Install container runtime
+  become: true
+  ansible.builtin.package:
+    name: [docker.io, docker-compose-v2]
+    state: present
+- name: Create NetBox deployment directory
+  become: true
+  ansible.builtin.file:
+    path: /opt/cluster-netbox
+    state: directory
+    mode: "0750"
+- name: Install NetBox Compose definition
+  become: true
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: /opt/cluster-netbox/compose.yml
+    mode: "0640"
+  notify: Restart NetBox
+- name: Enable NetBox service
+  become: true
+  ansible.builtin.template:
+    src: cluster-netbox.service.j2
+    dest: /etc/systemd/system/cluster-netbox.service
+    mode: "0644"
+- name: Enable NetBox service
+  become: true
+  ansible.builtin.systemd_service:
+    name: cluster-netbox
+    enabled: true
+    state: started
+    daemon_reload: true

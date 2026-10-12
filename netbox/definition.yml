@@ -1,0 +1,27 @@
+---
+site:
+  name: lab
+  slug: lab
+racks:
+  - name: rack-a
+    u_height: 42
+device_role:
+  name: Compute
+  slug: compute
+device_type:
+  manufacturer: Synthetic Lab
+  model: compute-node
+  slug: compute-node
+prefixes:
+  bmc: 10.41.0.0/24
+  provisioning: 10.42.0.0/24
+  data: 10.43.0.0/24
+pools:
+  bmc: 10.41.0.20-10.41.0.250
+  provisioning: 10.42.0.20-10.42.0.250
+  data: 10.43.0.20-10.43.0.250
+custom_fields:
+  - {name: last_git_sha, type: text}
+  - {name: image_tag, type: text}
+  - {name: convergence_result, type: selection, choices: [success, failed]}
+  - {name: convergence_duration_seconds, type: decimal}

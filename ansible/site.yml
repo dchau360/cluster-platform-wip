@@ -35,3 +35,11 @@
         path: "{{ lab_state_dir }}"
         state: directory
         mode: "0755"
+
+  roles:
+    - netbox
+    - dnsmasq
+    - slurmctld
+    - prometheus
+    - git_mirror
+    - warewulf_server

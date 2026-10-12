@@ -1,0 +1,8 @@
+interface={{ lab_prov_bridge }}
+bind-dynamic
+except-interface=lo
+domain={{ lab_prov_domain }}
+dhcp-authoritative
+enable-tftp
+tftp-root={{ lab_state_dir }}/tftp
+conf-file={{ lab_state_dir }}/dnsmasq/netbox-hosts.conf

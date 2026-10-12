@@ -1,0 +1,15 @@
+---
+- name: Record convergence result in NetBox
+  delegate_to: localhost
+  netbox.netbox.netbox_device:
+    netbox_url: "{{ lookup('env', 'NETBOX_URL') }}"
+    netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') }}"
+    validate_certs: true
+    data:
+      name: "{{ inventory_hostname }}"
+      custom_fields:
+        last_git_sha: "{{ convergence_git_sha }}"
+        image_tag: "{{ convergence_image_tag }}"
+        convergence_result: "{{ convergence_result }}"
+        convergence_duration_seconds: "{{ convergence_duration_seconds }}"
+    state: present

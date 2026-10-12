@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+mirror=/srv/git/mirror/platform.git
+published=/srv/git/published/platform.git
+if [ ! -d "$mirror" ]; then
+  git clone --mirror '{{ platform_public_repository }}' "$mirror"
+fi
+git -C "$mirror" remote update --prune
+test "$(git -C "$mirror" rev-parse --verify deployed^{commit})"
+if [ ! -d "$published" ]; then
+  git clone --bare "$mirror" "$published"
+fi
+git -C "$published" fetch "$mirror" '+refs/heads/deployed:refs/heads/deployed'
+git -C "$published" symbolic-ref HEAD refs/heads/deployed
+git -C "$published" update-server-info

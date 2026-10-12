@@ -1,0 +1,20 @@
+---
+- name: Install dnsmasq
+  become: true
+  ansible.builtin.package: {name: dnsmasq, state: present}
+- name: Install NetBox dnsmasq renderer
+  become: true
+  ansible.builtin.copy:
+    src: render_dnsmasq.py
+    dest: /usr/local/sbin/render-netbox-dnsmasq
+    mode: "0755"
+- name: Configure provisioning-only dnsmasq
+  become: true
+  ansible.builtin.template:
+    src: cluster.conf.j2
+    dest: /etc/dnsmasq.d/cluster.conf
+    mode: "0644"
+  notify: Restart dnsmasq
+- name: Enable dnsmasq
+  become: true
+  ansible.builtin.systemd_service: {name: dnsmasq, enabled: true, state: started}
