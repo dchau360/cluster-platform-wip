@@ -3,10 +3,22 @@
 import argparse
 import ipaddress
 import os
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import pynetbox
 import yaml
+
+
+def normalize(value):
+    """Normalize pynetbox's display objects and decimalized API numbers."""
+    if isinstance(value, bool) or value is None:
+        return value
+    text = str(value).lower()
+    try:
+        return Decimal(text).normalize()
+    except InvalidOperation:
+        return text
 
 
 def ensure(endpoint, lookup, values):
@@ -15,7 +27,7 @@ def ensure(endpoint, lookup, values):
         endpoint.create(values)
         return 1
     ignored = {"site", "rack", "device_type", "role", "manufacturer", "device", "object_types", "assigned_object_type", "assigned_object_id"}
-    changed = any(str(getattr(obj, key, "")).lower() != str(value).lower()
+    changed = any(normalize(getattr(obj, key, "")) != normalize(value)
                   for key, value in values.items() if key not in ignored)
     if changed:
         obj.update(values)
