@@ -53,15 +53,21 @@ getting them wrong:
   `WIPE=1` keeps the lease file, and that is the normal cheap way to cycle
   nodes, so this is the common path rather than an edge case.
 
-Measured both ways on the lab host, to show the rules are load-bearing:
+Measured both ways on the lab host, at `N=2`. Reported as first and last
+lease rather than by node name, because which node wins the race is not the
+interesting part and naming them would not generalise to another `N`:
 
-| | `cn01` | `cn02` |
+| `N=2` | first lease | last lease |
 | --- | --- | --- |
 | clean lease file | 5.104s | 6.115s |
-| stale lease left, **before** the fix | 0.031s | 0.015s |
+| stale lease left, **before** the fix | 0.015s | 0.031s |
 | stale lease left, **after** the fix | 5.109s | 6.121s |
 
 The middle row is the one to remember. It reported `ok`.
+
+The spread between first and last is the quantity the curve is made of, and
+it only means anything once the measurement is real. At `N=4` on the same
+host: 8.264s to 13.341s, against 5.104s to 6.115s at `N=2`.
 
 ## Phases
 
