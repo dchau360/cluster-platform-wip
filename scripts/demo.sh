@@ -4,9 +4,15 @@
 #
 # Brings the platform up, starts N nodes, waits for each to take a DHCP
 # lease on the isolated segment, follows each node's serial console through
-# the boot phases to the login prompt, and prints the per-phase, per-node
-# timing table. The 1-to-N curve is a project deliverable, so the demo records
-# it every time rather than only when someone remembers to measure.
+# the boot phases to the login prompt, takes each node through burn-in and
+# the acceptance gate to `active`, waits for it to join Slurm, runs a job
+# array across every one of them, and prints the per-phase, per-node timing
+# table. The 1-to-N curve is a project deliverable, so the demo records it
+# every time rather than only when someone remembers to measure.
+#
+# Zero manual steps, from power-off to a cluster that takes work. Everything
+# here is idempotent, so running it again on a live lab is cheap rather than
+# destructive.
 #
 # The console phases are observed live by scripts/lib/boot-phases.sh, which
 # nodes-up.sh starts in the background the moment it powers a node on. See
@@ -36,8 +42,15 @@ timed converge "" -- converge_run
 
 timed nodes-up    "" -- bash "$HERE/nodes-up.sh"
 
+# A login prompt is not a cluster. A node arrives `staged`, runs its own
+# burn-in and waits for the gate; these two phases are the rest of the way to
+# a node that can take a job. Both are idempotent: on a lab whose nodes are
+# already active they skip, which is why `make demo` twice is cheap.
+timed nodes-activate "" -- bash "$HERE/nodes-activate.sh"
+timed slurm-ready    "" -- bash "$HERE/slurm-ready.sh"
+
 echo
 timing_report "$LAB_TIMING_DIR/$LAB_RUN_ID.ndjson"
 
 echo
-log "nodes are running. 'make nodes-down' to stop them, 'make down' for everything."
+log "Slurm-ready. 'make nodes-down' to stop the nodes, 'make down' for everything."

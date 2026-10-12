@@ -1,0 +1,79 @@
+---
+# Present this node's provisioning NIC as an RDMA device.
+#
+# Node-local by construction: it reads only this node's own facts and touches
+# only this node. `modprobe` and `rdma` are driven with `command` rather than
+# a module, because the node image carries ansible-core alone and the
+# `modprobe` module lives in a collection that is not on the node.
+
+- name: Find the interface that holds the provisioning address
+  ansible.builtin.set_fact:
+    rdma_soft_roce_netdev: >-
+      {{ ansible_interfaces | map('regex_replace', '-', '_')
+         | map('extract', ansible_facts)
+         | selectattr('ipv4', 'defined')
+         | selectattr('ipv4.address', 'equalto', node_facts.address.split('/')[0])
+         | map(attribute='device') | first | default('') }}
+
+- name: Confirm the provisioning link was found
+  ansible.builtin.assert:
+    that:
+      - rdma_soft_roce_netdev | length > 0
+    fail_msg: >-
+      No local interface holds {{ node_facts.address }}, so there is no link
+      to put an RDMA device on. Nothing was changed.
+    quiet: true
+
+# Written whether or not the module is loaded right now, so the node comes
+# back with the driver after a reboot without waiting for the next pull.
+- name: Load the Soft-RoCE driver at every boot
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/cluster-rdma-rxe.conf
+    content: "{{ rdma_soft_roce_module }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Read the loaded kernel modules
+  ansible.builtin.command: lsmod
+  changed_when: false
+  register: rdma_soft_roce_lsmod
+
+# `(^|\n)` rather than `^`: Jinja's `search` is re.search without MULTILINE,
+# so `^` would only ever match the first line of lsmod's output.
+- name: Load the Soft-RoCE driver now
+  ansible.builtin.command: "modprobe {{ rdma_soft_roce_module }}"
+  when: >-
+    rdma_soft_roce_lsmod.stdout is not search('(^|\n)' ~ rdma_soft_roce_module ~ '\s')
+  changed_when: true
+
+- name: Read the RDMA links
+  ansible.builtin.command: rdma link show
+  changed_when: false
+  register: rdma_soft_roce_links
+
+# One link per NIC. `rdma link add` fails on a name that already exists, so
+# the existing-link check is what makes a second pull run change nothing.
+- name: Present the provisioning NIC as an RDMA device
+  ansible.builtin.command: >-
+    rdma link add {{ rdma_soft_roce_link_name }}
+    type rxe netdev {{ rdma_soft_roce_netdev }}
+  when: >-
+    rdma_soft_roce_links.stdout is not search('(^|\n)link\s+' ~ rdma_soft_roce_link_name ~ '/')
+  changed_when: true
+
+# A link that exists but has no verbs device behind it would let the
+# benchmark fail later with a message about the device, not about this step.
+- name: Confirm the verbs device the benchmark will open exists
+  ansible.builtin.command: "ibv_devinfo -d {{ rdma_soft_roce_link_name }}"
+  changed_when: false
+  register: rdma_soft_roce_devinfo
+
+- name: Record the RDMA device for the acceptance test to read back
+  ansible.builtin.copy:
+    dest: /etc/cluster-lab/rdma-device
+    content: |
+      {{ rdma_soft_roce_link_name }} {{ rdma_soft_roce_netdev }}
+    owner: root
+    group: root
+    mode: "0644"

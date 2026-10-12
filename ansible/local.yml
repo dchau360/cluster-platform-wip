@@ -63,6 +63,11 @@
           ansible.builtin.include_role:
             name: node_exporter
 
+        - name: Soft-RoCE RDMA device on the provisioning NIC
+          when: rdma_soft_roce_enabled | default(true) | bool
+          ansible.builtin.include_role:
+            name: rdma_soft_roce
+
         - name: Burn-in, while NetBox holds this node at staged
           when: node_facts.device.status == 'staged'
           ansible.builtin.include_role:
