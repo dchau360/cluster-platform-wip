@@ -58,6 +58,19 @@
     state: restarted
   notify: Restart slurmctld
 
+- name: Read the Slurm service account
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ cluster_slurm_user.name }}"
+
+- name: Refuse a Slurm account whose UID the nodes would not share
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.getent_passwd[cluster_slurm_user.name][1] | int == cluster_slurm_user.uid | int
+    fail_msg: >-
+      {{ cluster_slurm_user.name }} has UID {{ ansible_facts.getent_passwd[cluster_slurm_user.name][1] }}
+      on the controller; cluster_slurm_user.uid is {{ cluster_slurm_user.uid }}.
+
 - name: Create the job user groups
   become: true
   ansible.builtin.group:

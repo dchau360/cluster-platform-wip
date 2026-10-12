@@ -15,6 +15,22 @@
       Slurm configuration lives on the controller only.
     quiet: true
 
+- name: Create the Slurm service group
+  ansible.builtin.group:
+    name: "{{ cluster_slurm_user.name }}"
+    gid: "{{ cluster_slurm_user.uid }}"
+    system: true
+
+- name: Create the Slurm service user slurmd resolves from the controller's config
+  ansible.builtin.user:
+    name: "{{ cluster_slurm_user.name }}"
+    uid: "{{ cluster_slurm_user.uid }}"
+    group: "{{ cluster_slurm_user.name }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: /nonexistent
+    create_home: false
+
 - name: Create the job user groups
   ansible.builtin.group:
     name: "{{ item.name }}"

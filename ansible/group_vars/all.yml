@@ -79,6 +79,11 @@ lab_slurm_mem_reserve_mib: "{{ lookup('env', 'SLURM_MEM_RESERVE_MIB') | default(
 cluster_job_users:
   - {name: hpc, uid: 2000}
 
+# The account slurmctld runs as (slurm.conf SlurmUser). Every slurmd resolves
+# it while parsing the configless config and exits if it cannot, so the nodes
+# create it with the UID the controller's Debian package assigns.
+cluster_slurm_user: {name: slurm, uid: 64030}
+
 # Writable lab state. Never inside the repo, never in git.
 lab_state_dir: "{{ lookup('env', 'LAB_STATE_DIR') | default('/var/lib/cluster-lab', true) }}"
 

@@ -14,7 +14,7 @@ SlurmctldParameters=enable_configless
 
 AuthType=auth/munge
 CredType=cred/munge
-SlurmUser=slurm
+SlurmUser={{ cluster_slurm_user.name }}
 SlurmdUser=root
 
 StateSaveLocation={{ slurm_config_state_dir }}
