@@ -66,17 +66,25 @@ says so.
 ## Why NetBox is exposed on the segment
 
 The control host reaches the API at `127.0.0.1:8000`. A node cannot, so the
-compose stack also publishes NetBox on `10.42.0.1:8001`:
+segment gets the API on `10.42.0.1:8001` — but **not** through a published
+Docker port.
 
-```yaml
-ports:
-  - "127.0.0.1:8000:8080"           # control host: seeder and health checks
-  - "10.42.0.1:8001:8080"           # provisioning segment: discovery
+A published port is DNATed to the container, which turns the packet into a
+forwarded packet from `br-prov` to the Docker bridge. The `cluster_lab`
+nftables forward chain drops exactly that, and that drop is the isolation
+guarantee. So the netbox role installs a host-local socket proxy instead:
+
+```text
+node --http--> 10.42.0.1:8001 (lab-netbox-api.socket)
+                  | systemd-socket-proxyd
+                  v
+            127.0.0.1:8000 (published NetBox port)
 ```
 
-It binds the gateway address, never `0.0.0.0`, so the API does not appear on
-the WSL NAT interface. sushy-emulator already owns `10.42.0.1:8000`, which is
-why NetBox uses `8001`.
+Every hop is on the host, so nothing is forwarded and the isolation property
+is untouched. The Docker compose stack publishes NetBox on `127.0.0.1:8000`
+only. sushy-emulator already owns `10.42.0.1:8000`, which is why the proxy
+listens on `8001`.
 
 ## What the node writes
 
@@ -84,7 +92,12 @@ The device name is the name the provisioning system already gave the node
 (Warewulf sets the hostname). A machine defined nowhere falls back to its DMI
 serial, so it still gets a deterministic name. Before creating a device, the
 payload searches NetBox for one of the machine's MACs and adopts the device
-that owns it, so a re-run updates rather than duplicates.
+that owns it, so a re-run updates rather than duplicates. In this lab the
+NetBox device names come from the seeder (`rack-a-u01`...): physical position,
+not the Warewulf hostname (`cn01`). The node adopts the record that owns its
+MAC and writes the facts into it; the two naming schemes stay separate, which
+is what lets the record survive a NIC swap (criterion #3). A node whose MAC
+matches nothing gets a new record, named from its hostname or serial.
 
 | Object | Fields set from the scrape |
 | --- | --- |

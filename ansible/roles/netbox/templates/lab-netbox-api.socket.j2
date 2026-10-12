@@ -1,0 +1,12 @@
+[Unit]
+Description=NetBox API on the provisioning segment
+Documentation=https://github.com/dchau360/cluster-platform-wip/blob/main/docs/discovery.md
+# The socket does the binding; the matching service forwards each connection
+# to the loopback API. Binding on the gateway address and not the wildcard
+# keeps the API off the WSL NAT interface.
+[Socket]
+ListenStream={{ lab_prov_gw }}:{{ lab_netbox_segment_port }}
+Accept=no
+
+[Install]
+WantedBy=sockets.target

@@ -3,13 +3,13 @@ services:
     image: netboxcommunity/netbox:{{ netbox_image_tag | default('v4.7.2-5.1.1') }}
     restart: unless-stopped
     env_file: /etc/cluster-lab/netbox.env
-    ports:
-      # Control host: the seeder and the role's health check use this.
-      - "127.0.0.1:8000:8080"
-      # Provisioning segment: a node must reach the API to register itself.
-      # Bound to the gateway address, never the wildcard, so the API is not
-      # exposed on the WSL NAT interface. See ansible/group_vars/all.yml.
-      - "{{ lab_prov_gw }}:{{ lab_netbox_segment_port }}:8080"
+    # Loopback only. A node on the provisioning segment reaches the API through
+    # lab-netbox-api.socket, a host-local proxy, NOT through a published Docker
+    # port. A published port is DNATed to the container, which makes the packet
+    # a forwarded one, and the cluster_lab forward chain drops br-prov -> docker0
+    # by design. The proxy keeps the whole path host-local: listen on the
+    # gateway, connect to 127.0.0.1:8000. See docs/discovery.md.
+    ports: ["127.0.0.1:8000:8080"]
     depends_on: [postgres, redis]
   postgres:
     image: postgres:17-alpine

@@ -1,0 +1,17 @@
+[Unit]
+Description=Forward the provisioning-segment NetBox socket to the loopback API
+Documentation=https://github.com/dchau360/cluster-platform-wip/blob/main/docs/discovery.md
+# Why a proxy and not a published Docker port: a published port is DNATed to
+# the container, so the packet is forwarded br-prov -> docker0 and the
+# cluster_lab forward chain drops it. That drop is the isolation guarantee, not
+# an obstacle to route around. systemd-socket-proxyd keeps the path host-local,
+# so nothing is forwarded and the guarantee is untouched.
+Requires=lab-netbox-api.socket
+After=lab-netbox-api.socket cluster-netbox.service
+
+[Service]
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd --exit-idle-time=30 127.0.0.1:8000
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

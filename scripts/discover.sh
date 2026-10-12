@@ -46,6 +46,20 @@ netbox_token() {
 node_defined() { "${VIRSH[@]}" dominfo "$1" >/dev/null 2>&1; }
 node_running() { [[ "$("${VIRSH[@]}" domstate "$1" 2>/dev/null || true)" == running ]]; }
 
+# The node's provisioning NIC MAC. Read from libvirt rather than derived from a
+# formula, because a drill may have swapped it and the NetBox record follows
+# reality, not the harness's assumption.
+node_mac_address() {
+  local node="$1" mac idx
+  mac="$("${VIRSH[@]}" domiflist "$node" 2>/dev/null \
+    | awk 'NR>2 && NF>=5 {print $5}' | head -1)"
+  if [[ -z "$mac" ]]; then
+    idx="${node##*[!0-9]}"
+    mac="$(node_mac "$((10#${idx:-1}))")"
+  fi
+  printf '%s' "$mac"
+}
+
 # Boot the node from the network. sushy-emulator is the management path, so
 # the same Redfish client the power/boot automation uses does the work.
 power_into_pxe() {
@@ -58,12 +72,15 @@ power_into_pxe() {
   fi
 }
 
-# Poll NetBox until the node's own record reports a completed discovery.
-# Prints the device and its interfaces as JSON on success.
+# Poll NetBox until the record that owns the node's provisioning MAC reports a
+# completed discovery. The device may be one the node created or one it adopted
+# by MAC, so the MAC is the lookup key -- not the Warewulf hostname, which is a
+# different namespace from the NetBox device name by design.
+# Prints the device, its interfaces and its addresses as JSON on success.
 wait_for_record() {
   NETBOX_URL="$NETBOX_LOCAL_URL" \
   NETBOX_TOKEN="$(netbox_token)" \
-  DISCOVERY_NODE="$NODE" \
+  DISCOVERY_MAC="$DISCOVERY_MAC" \
   DISCOVERY_TIMEOUT="$DISCOVERY_TIMEOUT" \
   python3 - <<'PY'
 import json
@@ -75,7 +92,7 @@ import urllib.request
 
 base = os.environ["NETBOX_URL"].rstrip("/")
 token = os.environ["NETBOX_TOKEN"]
-node = os.environ["DISCOVERY_NODE"]
+mac = os.environ["DISCOVERY_MAC"]
 deadline = time.time() + float(os.environ["DISCOVERY_TIMEOUT"])
 headers = {"Authorization": f"Token {token}", "Accept": "application/json"}
 
@@ -89,22 +106,30 @@ def get(path):
 last = "no response yet"
 while time.time() < deadline:
     try:
-        devices = get(f"/api/dcim/devices/?name={node}&limit=1").get("results", [])
+        matches = get(
+            f"/api/dcim/interfaces/?mac_address={mac}&limit=1"
+        ).get("results", [])
+        device = None
+        if matches:
+            device = get(f"/api/dcim/devices/{matches[0]['device']['id']}/")
     except (urllib.error.URLError, TimeoutError) as exc:
         last = f"{type(exc).__name__}: {exc}"
         time.sleep(5)
         continue
 
-    if devices:
-        device = devices[0]
+    if device is not None:
         custom = device.get("custom_fields") or {}
         if custom.get("discovery_status") == "complete":
             interfaces = get(
                 f"/api/dcim/interfaces/?device_id={device['id']}&limit=100"
             ).get("results", [])
+            addresses = get(
+                f"/api/ipam/ip-addresses/?device_id={device['id']}&limit=100"
+            ).get("results", [])
             print(
                 json.dumps(
                     {
+                        "matched_mac": mac,
                         "device": {
                             key: device.get(key)
                             for key in (
@@ -119,6 +144,13 @@ while time.time() < deadline:
                             }
                             for interface in interfaces
                         ],
+                        "ip_addresses": [
+                            {
+                                key: address.get(key)
+                                for key in ("id", "address", "status", "assigned_object_type")
+                            }
+                            for address in addresses
+                        ],
                     },
                     indent=2,
                     sort_keys=True,
@@ -129,7 +161,7 @@ while time.time() < deadline:
     time.sleep(5)
 
 print(
-    f"no completed NetBox discovery record for {node} within "
+    f"no completed NetBox discovery record for MAC {mac} within "
     f"{os.environ['DISCOVERY_TIMEOUT']}s (last NetBox error: {last})",
     file=sys.stderr,
 )
@@ -138,8 +170,10 @@ PY
 }
 
 node_defined "$NODE" || die "no such libvirt domain: $NODE (try 'make nodes-up')"
+DISCOVERY_MAC="$(node_mac_address "$NODE")"
+[[ -n "$DISCOVERY_MAC" ]] || die "could not determine the provisioning MAC for $NODE"
 
-log "booting $NODE into image '$DISCOVERY_IMAGE' with overlay '$DISCOVERY_OVERLAY'"
+log "booting $NODE (mac $DISCOVERY_MAC) into image '$DISCOVERY_IMAGE' with overlay '$DISCOVERY_OVERLAY'"
 
 # Node-level overrides. `--image` shadows the profile's image; the runtime
 # overlay is appended to the profile's list, so the node keeps hosts,
