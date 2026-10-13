@@ -18,6 +18,7 @@ REQUIRED_ENABLED=(
   lab-dnsmasq.service
   libvirtd.socket
   docker.service
+  nginx.service
 )
 
 # These must NOT be enabled: they would race our own dnsmasq for the port.

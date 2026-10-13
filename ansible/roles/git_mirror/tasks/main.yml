@@ -46,6 +46,28 @@
     dest: "/etc/systemd/system/{{ item }}"
     mode: "0644"
   loop: [cluster-git-mirror.service, cluster-git-mirror.timer]
+- name: Make nginx wait for the provisioning address before it binds
+  become: true
+  ansible.builtin.file:
+    path: /etc/systemd/system/nginx.service.d
+    state: directory
+    mode: "0755"
+- name: Give nginx the ordering that keeps its bind from racing lab-net
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/nginx.service.d/cluster-lab-after-net.conf
+    mode: "0644"
+    content: |
+      # nginx serves the node git mirror on the provisioning address
+      # (10.42.0.1:80), which lab-net.service assigns at boot. Started
+      # without this ordering it races lab-net, the bind fails with
+      # "Cannot assign requested address", and after a cold start every
+      # node's ansible-pull fails with "Connection refused to 10.42.0.1:80"
+      # so slurmd never starts. The cold-start drill caught exactly that.
+      [Unit]
+      After=lab-net.service
+      Wants=lab-net.service
+  notify: Restart nginx
 - name: Enable mirror timer and HTTP publishing
   become: true
   when: not ansible_check_mode
