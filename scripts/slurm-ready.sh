@@ -100,12 +100,36 @@ echo
 
 (( joined_all == 1 )) || die "not every node joined Slurm; no job array was run"
 
+# A node can still be `completing` work from an earlier run. It frees mid-array,
+# and the scheduler then puts a second task on it while another node never gets
+# one — so the union is not every node and the check fails for a reason that has
+# nothing to do with the cluster being ready. Wait for every node to be idle
+# first; that is the state the array's "one task per node" argument assumes.
+expected=()
+for i in $(lab_node_indexes); do expected+=("$(node_name "$i")"); done
+
+log "waiting for every node to be idle before the job array"
+idle_deadline=$(( $(date +%s) + SLURM_READY_TIMEOUT ))
+while (( $(date +%s) < idle_deadline )); do
+  mapfile -t CUR_STATE < <(node_states)
+  busy=0
+  for name in "${expected[@]}"; do
+    state=''
+    for line in "${CUR_STATE[@]}"; do
+      [[ "${line%% *}" == "$name" ]] && state="${line#* }"
+    done
+    [[ "$state" == idle ]] || busy=1
+  done
+  (( busy == 0 )) && break
+  sleep 2
+done
+if (( busy != 0 )); then
+  warn "not every node reached idle; the array may not cover every node"
+fi
+
 # ---------------------------------------------------------------------------
 # Phase 2: a job array runs across all of them
 # ---------------------------------------------------------------------------
-
-expected=()
-for i in $(lab_node_indexes); do expected+=("$(node_name "$i")"); done
 
 phase_begin job-array
 # --chdir: the submitting shell's directory does not have to exist on a node,
