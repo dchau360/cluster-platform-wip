@@ -20,12 +20,19 @@
 # the tracked cast in CI.
 #
 # Usage:
-#   scripts/record-demo.sh demo    <node-count> [out.cast]
-#   scripts/record-demo.sh timings <run-id>     [out.cast]
+#   scripts/record-demo.sh demo       <node-count> [out.cast]
+#   scripts/record-demo.sh timings    <run-id>     [out.cast]
+#   scripts/record-demo.sh transcript <cast>       [out.txt]
 #
 # The `timings` form re-prints the table of a run that already happened,
 # from its stored NDJSON. That is how the N=4 table gets into the demo
 # package without pretending to be a second live run.
+#
+# Every cast is written with a plain-text transcript beside it, because
+# GitHub renders a `.cast` as the JSON it is. The transcript is what a
+# reader with no tooling and twenty minutes actually reads; the cast is for
+# the one who wants to watch it happen. The `transcript` form re-renders one
+# from a cast that already exists, and needs no lab.
 
 export LAB_SCRIPT_NAME=record-demo
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,6 +43,38 @@ lab_load_env
 mode="${1:-}"
 arg="${2:-}"
 out="${3:-}"
+
+# A cast is a JSON header plus one JSON array per output event. This renders
+# the output stream back to the text a terminal would have shown, dropping
+# the escape sequences that only mean something to a terminal: colour,
+# cursor moves, and the carriage returns a progress line uses to overwrite
+# itself. A line that was overwritten in the live run is kept, because in a
+# transcript the intermediate state is information rather than flicker.
+write_transcript() {
+  local cast="$1" txt="$2"
+  python3 - "$cast" "$txt" <<'PY'
+import json
+import re
+import sys
+
+cast_path, txt_path = sys.argv[1:3]
+
+with open(cast_path, encoding="utf-8") as fh:
+    fh.readline()
+    text = "".join(json.loads(line)[2] for line in fh if line.strip())
+
+text = re.sub(r"\x1b\[[0-9;?]*[ -/]*[@-~]", "", text)   # CSI
+text = re.sub(r"\x1b[\]P][^\x07\x1b]*(\x07|\x1b\\)?", "", text)  # OSC / DCS
+text = re.sub(r"\x1b[()][0-9A-B]", "", text)            # charset select
+text = re.sub(r"\x1b[=>MD78]", "", text)
+text = text.replace("\r\n", "\n").replace("\r", "\n")
+text = re.sub(r"\n{3,}", "\n\n", text)
+
+with open(txt_path, "w", encoding="utf-8") as fh:
+    fh.write(text)
+print(f"transcript: {sum(1 for _ in open(txt_path, encoding='utf-8'))} lines")
+PY
+}
 
 case "$mode" in
   demo)
@@ -50,8 +89,15 @@ case "$mode" in
     out="${out:-$REPO_ROOT/docs/demo/timings-$arg.cast}"
     title="make timings RUNID=$arg — cluster-platform-wip"
     ;;
+  transcript)
+    [[ -f "$arg" ]] || die "usage: record-demo.sh transcript <cast> [out.txt]"
+    out="${out:-${arg%.cast}.txt}"
+    write_transcript "$arg" "$out"
+    log "transcript: $out"
+    exit 0
+    ;;
   *)
-    die "usage: record-demo.sh {demo <node-count>|timings <run-id>} [out.cast]"
+    die "usage: record-demo.sh {demo <node-count>|timings <run-id>|transcript <cast>} [out]"
     ;;
 esac
 
@@ -245,6 +291,7 @@ PY
 fi
 
 mv "$scrubbed" "$out"
+write_transcript "$out" "${out%.cast}.txt"
 
 # ---------------------------------------------------------------------------
 # Report
@@ -266,6 +313,7 @@ PY
 
 echo
 log "cast:     $out"
+log "text:     ${out%.cast}.txt"
 log "duration: $duration  (replays 1:1 with the real run)"
 log "size:     $(du -h "$out" | cut -f1)"
 log "next:     make lint   # scripts/check-no-host-values.sh is the proof, not this script"
