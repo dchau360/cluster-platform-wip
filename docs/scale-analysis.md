@@ -19,6 +19,17 @@ projected it says so, and where it comes from a measurement it says that too.
 
 <!-- MEASURED-SCALE -->
 
+## The measured curve, in one line
+
+Measured on the lab at N=1, 2 and 4 (the tables are in
+[`measurements.md`](measurements.md#results)): the per-run phases are flat,
+the DHCP lease is flat (5.06-6.09 s at N=2, 5.08-6.09 s at N=4), and the
+phase that bends is `overlay` — the image and runtime-overlay fetch and
+apply — **6.80 s at one node, 7.44 s at two, 11.24-11.87 s at four**. The
+burn-in acceptance path is linear in N and separate: 95.5 s for one node,
+126.2 s for two, 189.2 s for four. Everything below is what that slope means
+at a hundred.
+
 ## The first wall is not performance. It is the address plan.
 
 Before any throughput argument, the configuration stops working:
@@ -67,18 +78,20 @@ Measured, on this host:
 
 | | |
 | --- | --- |
-| Image served to each node | `compute-slurm.img.gz`, **386 MiB** (832 MiB uncompressed) |
+| Image served to each node | `compute-slurm.img.gz`, **386 MiB** (851 MiB uncompressed) |
 | Server | one `warewulfd`, one HTTP listener, reading from one local disk |
 | Runtime overlays | 41 MiB total for the fleet, per-node slices of it |
 
-At 100 nodes booting together that is **38.6 GiB** out of one HTTP server.
+At 100 nodes booting together that is **37.7 GiB** out of one HTTP server.
 On a 1 GbE uplink the wire time alone is about **5.5 minutes** at line rate,
 before disk reads, gzip and TCP fairness; on 10 GbE, about 33 seconds at line
 rate, which real servers do not reach while also fanning out 100 connections.
 In this lab the fetch is a bridge on the same host and the image is in page
-cache, so the measured per-node fetch cost is nearly flat — which is exactly
-why the lab cannot be trusted on this point and the arithmetic has to carry
-it.
+cache, so the arithmetic is the only projection this lab can offer. The
+measured `overlay` phase is **not** flat anyway: 6.80 s at one node, 7.44 s
+at two, 11.24-11.87 s at four. The fan-out is already serialising on a bridge
+with the image in page cache, which is a reason to expect a real server to be
+worse, not better.
 
 What would change: Warewulf's own options first — serve the image over
 multicast or BitTorrent-style distribution rather than N unicast HTTP
@@ -90,11 +103,15 @@ rolling update (below) the schedule that actually hurts.
 
 ### 2. Simultaneous DHCP times out and retries
 
-Measured, on this host: one `dnsmasq` answers every request, and the
-contention is already visible at four nodes. The first node served completes
-`firmware` in 7.8 s at N=2; at N=4 every node takes 13.5–14.1 s. The shape is
-a **step, not a slope** — each node's negotiation serialises behind the
-others, and within one run the nodes then finish together.
+Measured, on this host: one `dnsmasq` answers every request. In the SRE-8
+build the lease is flat over the range that can be measured — 5.06-6.09 s at
+N=2 and 5.08-6.09 s at N=4 — and no step is visible at four nodes. An earlier
+build on the same host did show one (`firmware` 7.8 s on the first node to be
+served and 13.4 s on the second at N=2, then ~13.4 s for all four at N=4), so
+the contention is real but its size depends on the image and the host state.
+The honest statement is that **the measured range does not settle what
+happens at 100**: the projection below is arithmetic over a per-node DHCP
+cost, not an extrapolation of a fitted curve.
 
 The projection is where this gets dangerous. PXE firmware does not wait
 politely: it retries with a backoff and then gives up. A hundred nodes
@@ -127,28 +144,37 @@ the per-node NetBox cost is **not** where the hours are.
 
 The hours are here:
 
-| | Measured at N=2 | Projected at 100 |
+| | Measured, 4 nodes | Projected at 100 |
 | --- | --- | --- |
-| Rolling image update | 190 s for 2 nodes, of which 62 s was one node's drain and 42 s its health wait | **~2.6 hours** |
+| Rolling image update | 211.9 s total: per node 0.44 s drain, 1.34 s reimage, 42.0 s health, 0.24 s resume | **~1.2 hours** if the drain is empty; ~**1.8 hours** if each node has ~60 s of real work to drain first |
 
 The rolling update is serial **by design** — drain one node, wait for its
-jobs, reimage, reboot, wait for healthy, resume, next — and the dominant term
-is the drain, which waits for real work to finish. At 100 nodes that is a
-working day of rollout, and the design question is not how to speed up a step
-but how many nodes may be out at once. The answer is a policy decision (what
-fraction of the cluster can be down), not an optimisation, and this harness
-has no knob for it today. That is the gap worth naming.
+jobs, reimage, reboot, wait for healthy, resume, next. On this idle cluster
+the dominant term is the health wait (42 s of the 44 s per node), and the
+drain is near-zero because there was nothing to drain; the drain is what grows
+when real work is running, and it is also the one term that is a property of
+the workload rather than the harness. At 100 nodes the design question is not
+how to speed up a step but how many nodes may be out at once. The answer is a
+policy decision (what fraction of the cluster can be down), not an
+optimisation, and this harness has no knob for it today. That is the gap worth
+naming.
 
 ### 4. The burn-in gate is one serial pass
 
 Every freshly-provisioned node runs its own burn-in — `stress-ng` and `fio`,
-in parallel across nodes, so that part is flat. The gate then reads every
-staged node, judges it and PATCHes a status: one pass, a handful of API calls
-per node, so about the same order as seeding. What is not flat is the
-power-cycle after promotion: `nodes-activate` cycles the promoted nodes one
-at a time and watches each console to a login prompt. At four nodes that is
-seconds each; at 100 it is a second full boot of the whole fleet, which lands
-straight back on failure modes 1 and 2.
+in parallel across nodes, so that part is flat. Measured: **61.4-67.3 s per
+node** at every count, running in parallel, so the wall-clock burn-in does not
+grow with N within a run. The gate then reads every staged node, judges it and
+PATCHes a status: one pass, a handful of API calls per node, so about the same
+order as seeding (5.1-5.7 s measured for the whole gate).
+
+What is not flat is the power-cycle after promotion: `nodes-activate` cycles
+the promoted nodes one at a time and watches each console to a login prompt,
+and each promoted node also pays its own burn-in wait. Measured:
+**28.5-30.5 s per node** for the power-cycle, and `nodes-activate` 95.5 s for
+one node, 126.2 s for two and 189.2 s for four. At 100 nodes that is one and a
+half hours of serial activation plus a second full boot of the whole fleet,
+which lands straight back on failure modes 1 and 2.
 
 What would change: cycle in waves, and have the gate promote in batches so
 the reboots are spread rather than simultaneous.
@@ -161,10 +187,10 @@ neither can be closed on this hardware.
 1. **The DHCP and image-pull stampede.** Everything in failure modes 1 and 2
    above N=4 is arithmetic over a measured per-node cost, not an observation.
    A hundred nodes contending for one `dnsmasq` and one `warewulfd` has never
-   been run here. The step from N=2 to N=4 is real evidence that contention
-   exists and is serialising; it is not evidence of what that curve does at
-   100, and a step function that stays flat from 4 to 100 is as consistent
-   with the data as one that collapses.
+   been run here. The measured 2-to-4 data is the evidence: the image fetch
+   (`overlay`) already bends from 7.4 s to ~11.9 s, while the DHCP lease is
+   flat at 5-6 s. That is a reason to watch the boot server first and to treat
+   the DHCP projection as the less-supported of the two.
 2. **Real vendor BIOS attributes.** The management plane is
    `sushy-emulator` in front of libvirt. Power on, power off, cycle and boot
    order are exercised against it and they work. What has never been touched

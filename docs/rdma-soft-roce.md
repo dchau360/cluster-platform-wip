@@ -31,8 +31,10 @@ from real completions on a real queue pair.
   this repository claims otherwise.
 - **There is no subnet manager.** No OpenSM, no `opensm.service`, nothing to
   assign LIDs. RoCE runs over Ethernet and UDP, so there is nothing for a
-  subnet manager to do. An InfiniBand fabric would need one, and standing one
-  up is a step this lab has never performed.
+  subnet manager to *route*; but its absence is why the benchmark must use
+  `-R` (RDMA CM, above) rather than perftest's default InfiniBand CM. An
+  InfiniBand fabric would need a subnet manager, and standing one up is a
+  step this lab has never performed.
 - **There is no offload, no hardware GID table and no hardware PFC.** RoCE at
   speed needs lossless Ethernet — PFC, ECN, DCQCN — configured on real
   switches. This lab has a Linux bridge.
@@ -83,13 +85,30 @@ a node name or a node count.
 
 ## Measured
 
-Recorded on the lab host. `ib_write_bw` is the one-sided verb (the initiator
-writes straight into the peer's registered memory, with no peer CPU
-involvement in the data path) and `ib_send_bw` the two-sided one (the peer
-posts receives). Both ran over `rdma_rxe` on the provisioning NIC of two
-nodes.
+Recorded on the lab host on 2026-10-12, `cluster-platform-wip` at `b7e16ba`,
+nodes `cn01` and `cn02` on image `sha-baa648ba99c8`, device `rxe0` on each
+node's provisioning NIC (`eth0`, `10.42.0.20` and `10.42.0.21`).
 
-<!-- MEASURED-RDMA -->
+| Tool | Message size | Iterations | Peak MB/s | Average MB/s | Msg rate Mpps |
+| --- | --- | --- | --- | --- | --- |
+| `ib_write_bw` — one-sided RDMA WRITE | 65536 | 5000 | 407.88 | **396.21** | 0.006339 |
+| `ib_send_bw` — two-sided SEND | 65536 | 5000 | 504.71 | **480.11** | 0.007682 |
+
+`iperf3` over the same link, same host, same two nodes: **74.8 GBytes in 10 s —
+64.3 Gbit/s sender, 64.0 Gbit/s receiver**. That is the TCP path the verbs
+path is standing in for, and on this software provider the verbs path is
+roughly an order of magnitude slower: Soft-RoCE moves about 3.8 Gbit/s where
+virtio-over-TCP moves about 64 Gbit/s. Both numbers are real; neither is a
+prediction of an HCA.
+
+**`-R` is required, and that is a property of this lab.** With no subnet
+manager there is no SA for perftest's default InfiniBand CM to resolve a path
+through, so `ib_write_bw`/`ib_send_bw` exit `ADDR_ERROR` without it. `-R`
+switches the connection setup to the RDMA CM over TCP — the out-of-band
+handshake runs on the normal IP path, and the data path that follows is the
+genuine verbs path. `RDMA_TEST_EXTRA_ARGS=-R` sets it, and the failure mode
+without it is in the SRE-8 thread so the next person does not re-discover
+it.
 
 ### Reading it
 
