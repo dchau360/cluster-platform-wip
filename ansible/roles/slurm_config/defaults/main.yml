@@ -10,3 +10,8 @@ slurm_config_log_dir: /var/log/slurm
 slurm_config_jobcomp_log: "{{ slurm_config_log_dir }}/jobcomp.log"
 slurm_config_renderer: /usr/local/sbin/cluster-render-slurm-model
 slurm_config_netbox_url: http://127.0.0.1:8000
+# slurmdbd runs on the controller. localhost, because the only readers of
+# this value are slurmctld and the accounting commands on the head node.
+slurm_config_accounting_storage_host: localhost
+# Seconds between samples of a running step's usage.
+slurm_config_jobacct_gather_frequency: 30

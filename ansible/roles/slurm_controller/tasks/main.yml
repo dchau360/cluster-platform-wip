@@ -128,3 +128,45 @@
   retries: 15
   delay: 2
   changed_when: false
+
+# The accounting and gather plugins are loaded at start. `scontrol
+# reconfigure` re-executes slurmctld since 23.11, but a reconfigure lost to a
+# failed run would leave the old plugins loaded with an unchanged file, so
+# judge the daemon against the file rather than trust the handler, as with
+# munged above.
+- name: Read the rendered slurm.conf
+  when: not ansible_check_mode
+  become: true
+  ansible.builtin.slurp:
+    src: "{{ slurm_config_dir | default('/etc/slurm') }}/slurm.conf"
+  register: slurm_controller_slurm_conf
+
+- name: Read the plugins slurmctld is running
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    argv: [scontrol, show, config]
+  register: slurm_controller_running_config
+  changed_when: false
+
+- name: Restart a slurmctld running other plugins than slurm.conf names
+  become: true
+  when:
+    - not ansible_check_mode
+    - (slurm_controller_slurm_conf.content | b64decode
+       | regex_search('(?m)^' ~ item ~ '=(\\S+)', '\\1') | default([''], true) | first)
+      != (slurm_controller_running_config.stdout
+          | regex_search('(?m)^' ~ item ~ '\\s*=\\s*(\\S+)', '\\1') | default([''], true) | first)
+  ansible.builtin.systemd_service:
+    name: slurmctld
+    state: restarted
+  loop: [AccountingStorageType, JobAcctGatherType]
+
+- name: Wait for slurmctld to answer after the plugin check
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    cmd: scontrol ping
+  register: slurm_controller_ping_after_restart
+  until: "'is UP' in slurm_controller_ping_after_restart.stdout"
+  retries: 15
+  delay: 2
+  changed_when: false

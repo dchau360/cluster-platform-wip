@@ -1,0 +1,47 @@
+---
+# Slurm accounting on the head node: MariaDB holds the records, slurmdbd is
+# the only thing that talks to it, and slurmctld talks to slurmdbd. Nodes
+# never reach either; a node's slurmd reports to slurmctld as before.
+slurm_accounting_packages: [mariadb-server, slurmdbd, munge]
+
+slurm_accounting_db_name: slurm_acct_db
+slurm_accounting_db_user: slurm
+
+# Generated on the head node the first time the role runs, never in git and
+# never in a variable anyone types. Root-only, beside the Munge key.
+slurm_accounting_secret_dir: /etc/cluster-lab
+slurm_accounting_db_password_file: "{{ slurm_accounting_secret_dir }}/slurmdbd-db.password"
+
+slurm_accounting_conf: /etc/slurm/slurmdbd.conf
+slurm_accounting_client_conf: /etc/slurm/accounting-client.conf
+slurm_accounting_log_dir: /var/log/slurm
+slurm_accounting_port: "{{ lab_slurmdbd_port }}"
+# Seconds slurmdbd's start job may take to begin listening before it fails.
+slurm_accounting_listen_timeout: 60
+
+# InnoDB settings SchedMD's accounting guide asks for. The buffer pool is
+# sized for a lab; a production head node gives it most of its spare memory.
+slurm_accounting_innodb_buffer_pool_size: 256M
+slurm_accounting_innodb_log_file_size: 64M
+slurm_accounting_innodb_lock_wait_timeout: 900
+
+# Retention. The database is the cluster's job history, so it is kept for a
+# year and then purged; nothing is archived to disk in the lab.
+slurm_accounting_purge_after:
+  PurgeEventAfter: 12month
+  PurgeJobAfter: 12month
+  PurgeResvAfter: 12month
+  PurgeStepAfter: 6month
+  PurgeSuspendAfter: 6month
+  PurgeTXNAfter: 12month
+  PurgeUsageAfter: 24month
+
+# Associations sacctmgr creates: the cluster, one account, and the job users
+# in it. root is added by slurmdbd itself.
+slurm_accounting_cluster: "{{ lab_slurm_cluster_name }}"
+slurm_accounting_account: "{{ lab_slurm_account }}"
+slurm_accounting_account_description: lab users
+slurm_accounting_users: "{{ cluster_job_users | map(attribute='name') | list }}"
+
+# Where slurmctld saves the cluster name and ID it last ran with.
+slurm_accounting_clustername_file: "{{ slurm_config_state_dir | default('/var/lib/slurm/slurmctld') }}/clustername"

@@ -238,3 +238,19 @@ jobs:
       - run: ansible-galaxy collection install community.docker ansible.posix
       - name: local.yml converges, then converges again with changed=0
         run: molecule test -s node_pull
+
+  # The head node's accounting role on the head node's distribution, under
+  # systemd: MariaDB, slurmdbd, the unit ordering and the sacctmgr
+  # associations, converged twice with changed=0 the second time.
+  molecule-accounting:
+    name: molecule (slurm accounting)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: pip install --disable-pip-version-check "ansible-core>=2.18" molecule "molecule-plugins[docker]" docker
+      - run: ansible-galaxy collection install community.docker ansible.posix
+      - name: slurm_accounting converges, then converges again with changed=0
+        run: molecule test -s slurm_accounting

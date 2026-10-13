@@ -121,6 +121,69 @@ configuration stays pull. See
 | Move the config release | `make promote SHA=<commit>` |
 | Judge staged nodes' burn-in | `make burnin-gate` |
 
+## Accounting
+
+Every job and step is recorded in a MariaDB database on the head node.
+`slurmctld` sends the records to `slurmdbd`, the only client of the database;
+nodes talk to neither. The `slurm_accounting` role installs and configures
+both. `slurm.conf` sets `AccountingStorageType=accounting_storage/slurmdbd`
+and `JobAcctGatherType=jobacct_gather/cgroup`, so each step's CPU, memory and
+I/O come from its cgroup on the node.
+
+Read the history on the lab host:
+
+```sh
+sacct                                      # your jobs since midnight
+sacct -a -S now-1day -X \
+  -o JobID,User,Account,NodeList,Elapsed,State,ExitCode   # everyone's, one line per job
+sacct -j <jobid> -o JobID,NodeList,Elapsed,MaxRSS,TotalCPU,State,ExitCode   # with steps
+sreport cluster utilization start=now-7days             # cluster busy/idle/down
+sreport user topusage start=now-30days                  # who used the hours
+sacctmgr show association format=Cluster,Account,User   # who may run where
+```
+
+An array task is `<jobid>_<index>`. `-X` shows allocations only and hides
+the steps.
+
+What the role creates, and how to change it:
+
+| Thing | Where | Change it with |
+| --- | --- | --- |
+| Cluster | `SLURM_CLUSTER_NAME` | `lab/local.env`, then `make converge` |
+| Account the job users belong to | `SLURM_ACCOUNT` | `lab/local.env`, then `make converge` |
+| Users in that account | `cluster_job_users` in `ansible/group_vars/all.yml` | the file, then `make converge` |
+| `slurmdbd` port | `SLURMDBD_PORT` | `lab/local.env`, then `make converge` |
+| Retention (jobs 12 months, steps 6) | `slurm_accounting_purge_after` | role defaults |
+
+The role reads each association first and adds only the missing ones, so it
+never removes anything. To remove a user or account, run `sacctmgr remove
+user <name>` or `sacctmgr remove account <name>` by hand, and take it out of
+the variables too, or the next converge adds it back.
+`AccountingStorageEnforce` is not set. Every job is recorded, and a user
+with no association can still run jobs. Turn enforcement on once every
+submitting user has an association.
+
+The database password is generated on the head node the first time the role
+runs. It is stored in `/etc/cluster-lab/slurmdbd-db.password`, mode `0600`
+root, and rendered into `/etc/slurm/slurmdbd.conf`, mode `0600` slurm. It is
+not in git, not in an image, and not in any variable. To rotate it, delete the
+file and run `make converge`: the role makes a new password, resets the
+database user to it, re-renders `slurmdbd.conf` and restarts `slurmdbd`.
+`slurmctld` keeps records it cannot send while `slurmdbd` is away and sends
+them when it comes back.
+
+On a cold start, systemd brings up `mariadb`, then `slurmdbd`, then
+`slurmctld`. `slurmdbd`'s start job ends only once it is listening, and
+`make cold-start-check` checks that order. To find out why a job went
+missing:
+
+```sh
+systemctl status mariadb slurmdbd slurmctld
+sudo tail -n 50 /var/log/slurm/slurmdbd.log
+sacctmgr show cluster          # the cluster is registered, with a ControlHost
+sdiag | grep -A3 'DBD Agent'   # records waiting for slurmdbd; non-zero for long = trouble
+```
+
 ## Power and consoles
 
 Redfish is real for these nodes: `sushy-emulator` maps it to libvirt.
@@ -145,6 +208,8 @@ Each node's serial console is also written to `$LAB_VM_DIR/console/<node>.log`.
 | warewulfd, iPXE and images | `http://10.42.0.1:9873` | the provisioning segment |
 | node_exporter | `<node>:9100` | the segment; scraped by Prometheus on the head node |
 | slurmctld / slurmd | `:6817` / `:6818` | the segment |
+| slurmdbd | `:6819` | listens on every address, Munge-authenticated; its clients are on the head node (`slurmctld`, `sacct`, `sacctmgr`) |
+| MariaDB (accounting) | `127.0.0.1:3306` and the local socket | `slurmdbd` only |
 
 ## Alerting and runbooks
 

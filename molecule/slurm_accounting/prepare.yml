@@ -1,0 +1,63 @@
+---
+# What the rest of site.yml gives the head node before accounting matters:
+# the Slurm client tools, a Munge key and the job users. No slurm.conf: the
+# role must not need one.
+- name: Stand the container in for the head node
+  hosts: all
+  gather_facts: false
+  vars_files:
+    - "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/ansible/group_vars/all.yml"
+  tasks:
+    - name: Wait for systemd inside the container
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        cmd: systemctl is-system-running --wait
+      register: slurm_accounting_systemd
+      changed_when: false
+      failed_when: slurm_accounting_systemd.stdout not in ['running', 'degraded']
+
+    # slurmctld for its unit, which the role orders; it is never started here.
+    - name: Install the Slurm client, slurmctld and Munge
+      ansible.builtin.apt:
+        name: [slurm-client, slurmctld, munge]
+        update_cache: true
+        state: present
+
+    - name: Create a Munge key
+      ansible.builtin.command:
+        cmd: mungekey --create --keyfile=/etc/munge/munge.key
+        creates: /etc/munge/munge.key
+
+    - name: Give the key to munged
+      ansible.builtin.file:
+        path: /etc/munge/munge.key
+        owner: munge
+        group: munge
+        mode: "0400"
+
+    - name: Start munge
+      ansible.builtin.systemd_service:
+        name: munge
+        enabled: true
+        state: started
+
+    - name: Create the job users
+      ansible.builtin.user:
+        name: "{{ item.name }}"
+        uid: "{{ item.uid }}"
+      loop: "{{ cluster_job_users }}"
+
+    # A slurmctld that ran before accounting leaves the ID it made up; the
+    # role must clear it, or slurmctld would refuse slurmdbd's ID.
+    - name: Create slurmctld's state directory
+      ansible.builtin.file:
+        path: /var/lib/slurm/slurmctld
+        state: directory
+        owner: slurm
+        group: slurm
+        mode: "0755"
+
+    - name: Leave a cluster ID saved by slurmctld before accounting
+      ansible.builtin.copy:
+        dest: /var/lib/slurm/slurmctld/clustername
+        content: "{{ lab_slurm_cluster_name }}|1"
+        mode: "0644"

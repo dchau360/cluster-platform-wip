@@ -1,0 +1,22 @@
+---
+- name: Restart mariadb
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.systemd_service:
+    name: mariadb
+    state: restarted
+
+# slurmctld queues accounting records while slurmdbd is away and sends them
+# when it is back, so restarting slurmdbd loses nothing.
+- name: Restart slurmdbd
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.systemd_service:
+    name: slurmdbd
+    state: restarted
+    daemon_reload: true
+
+- name: Reload systemd
+  become: true
+  ansible.builtin.systemd_service:
+    daemon_reload: true

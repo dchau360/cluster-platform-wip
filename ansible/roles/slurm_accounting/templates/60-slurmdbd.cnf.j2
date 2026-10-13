@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+#
+# MariaDB settings for the Slurm accounting database, from SchedMD's
+# accounting guide. Local socket and loopback only: slurmdbd is the one
+# client, and it runs on this host.
+[mysqld]
+bind-address = 127.0.0.1
+innodb_buffer_pool_size = {{ slurm_accounting_innodb_buffer_pool_size }}
+innodb_log_file_size = {{ slurm_accounting_innodb_log_file_size }}
+innodb_lock_wait_timeout = {{ slurm_accounting_innodb_lock_wait_timeout }}

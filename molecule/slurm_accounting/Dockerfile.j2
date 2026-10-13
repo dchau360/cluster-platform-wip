@@ -1,0 +1,9 @@
+# The head node's distribution, with systemd as PID 1: the role enables and
+# orders units, so it is tested where units exist.
+FROM {{ item.image }}
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends systemd systemd-sysv python3 sudo iproute2 ca-certificates \
+ && apt-get clean && rm -rf /var/lib/apt/lists/*
+STOPSIGNAL SIGRTMIN+3
+CMD ["/usr/sbin/init"]

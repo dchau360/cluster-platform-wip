@@ -1,0 +1,8 @@
+# {{ ansible_managed }}
+[Unit]
+# Accounting first on a cold start. slurmctld would queue records for a late
+# slurmdbd and send them later, but it would also start every boot with a
+# failed connection to it. slurmdbd's own start job ends only once it is
+# listening, so this orders slurmctld after a slurmdbd that can answer.
+Wants=slurmdbd.service
+After=slurmdbd.service

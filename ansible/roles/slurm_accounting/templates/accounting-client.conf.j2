@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+#
+# The few slurm.conf keys sacctmgr needs to find slurmdbd. The role points
+# sacctmgr here with SLURM_CONF, so the cluster, account and users exist
+# before slurmctld first connects, whatever state /etc/slurm/slurm.conf is in.
+# Never served to nodes: configless serves only the files slurm.conf names.
+ClusterName={{ slurm_accounting_cluster }}
+SlurmctldHost=localhost
+AuthType=auth/munge
+AccountingStorageType=accounting_storage/slurmdbd
+AccountingStorageHost=localhost
+AccountingStoragePort={{ slurm_accounting_port }}

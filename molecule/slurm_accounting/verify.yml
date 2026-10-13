@@ -1,0 +1,83 @@
+---
+- name: Verify accounting on the head node
+  hosts: all
+  gather_facts: false
+  vars_files:
+    - "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/ansible/group_vars/all.yml"
+  tasks:
+    - name: MariaDB and slurmdbd are enabled at boot
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        cmd: systemctl is-enabled mariadb slurmdbd
+      changed_when: false
+
+    - name: MariaDB and slurmdbd are running
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        cmd: systemctl is-active mariadb slurmdbd
+      changed_when: false
+
+    - name: Read the units' ordering
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        argv: [systemctl, show, "{{ item }}", --property=After, --property=Wants, --value]
+      loop: [slurmdbd, slurmctld]
+      register: slurm_accounting_order
+      changed_when: false
+
+    - name: Stat the secret and the configuration
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /etc/cluster-lab/slurmdbd-db.password
+        - /etc/slurm/slurmdbd.conf
+      register: slurm_accounting_files
+
+    - name: Read the password and slurmdbd.conf
+      ansible.builtin.slurp:
+        src: "{{ item }}"
+      loop:
+        - /etc/cluster-lab/slurmdbd-db.password
+        - /etc/slurm/slurmdbd.conf
+      register: slurm_accounting_contents
+      no_log: true
+
+    - name: Units ordered, password root-only, slurmdbd.conf slurm-only
+      ansible.builtin.assert:
+        that:
+          - "'mariadb.service' in slurm_accounting_order.results[0].stdout"
+          - "'slurmdbd.service' in slurm_accounting_order.results[1].stdout"
+          - slurm_accounting_files.results[0].stat.pw_name == 'root'
+          - slurm_accounting_files.results[0].stat.mode == '0600'
+          - slurm_accounting_files.results[1].stat.pw_name == cluster_slurm_user.name
+          - slurm_accounting_files.results[1].stat.mode == '0600'
+
+    - name: The generated password is the one slurmdbd uses
+      ansible.builtin.assert:
+        that:
+          - (slurm_accounting_contents.results[0].content | b64decode | trim | length) == 64
+          - ('StoragePass=' ~ (slurm_accounting_contents.results[0].content | b64decode | trim))
+            in (slurm_accounting_contents.results[1].content | b64decode)
+      no_log: true
+
+    - name: Read the associations
+      environment:
+        SLURM_CONF: /etc/slurm/accounting-client.conf
+      ansible.builtin.command:
+        argv: [sacctmgr, --noheader, --parsable2, show, association, "format=Cluster,Account,User"]
+      register: slurm_accounting_assocs
+      changed_when: false
+
+    - name: The cluster, the account and every job user are in the database
+      ansible.builtin.assert:
+        that:
+          - (lab_slurm_cluster_name ~ '|' ~ lab_slurm_account ~ '|') in slurm_accounting_assocs.stdout_lines
+          - (lab_slurm_cluster_name ~ '|' ~ lab_slurm_account ~ '|' ~ item.name) in slurm_accounting_assocs.stdout_lines
+        fail_msg: "{{ slurm_accounting_assocs.stdout_lines }}"
+      loop: "{{ cluster_job_users }}"
+
+    - name: Stat the cluster ID slurmctld saved before accounting
+      ansible.builtin.stat:
+        path: /var/lib/slurm/slurmctld/clustername
+      register: slurm_accounting_stale_id
+
+    - name: The stale cluster ID is gone, so slurmctld takes slurmdbd's
+      ansible.builtin.assert:
+        that: not slurm_accounting_stale_id.stat.exists

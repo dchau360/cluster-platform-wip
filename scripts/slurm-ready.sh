@@ -14,10 +14,10 @@
 # of the nodes the tasks ran on is the evidence. One job with N tasks would
 # prove the allocation, not that each node ran something of its own.
 #
-# Why `scontrol` and not `sacct`: this cluster runs without an accounting
-# database (AccountingStorageType is unset), so `sacct` has nothing to read.
-# `scontrol show job` holds a finished job for MinJobAge seconds, which is
-# where the per-task state, exit code and node list are read from.
+# Two records of the same array, checked against each other. `scontrol show
+# job` is the controller's memory of a finished job, held for MinJobAge
+# seconds; `sacct` is the accounting database's permanent one (slurmdbd on the
+# head node). Both must show every task COMPLETED 0:0 on its own node.
 
 export LAB_SCRIPT_NAME=slurm-ready
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -209,8 +209,39 @@ if (( ${#missing[@]} > 0 )); then
   warn "no array task ran on: ${missing[*]}"
   status=fail
 fi
+# The accounting database's copy. slurmctld sends each record to slurmdbd
+# asynchronously, so a task that has left the queue can be a moment away from
+# being in `sacct`; wait for the records rather than read once.
+accounting="$(scontrol show config 2>/dev/null \
+  | awk -F'=' '$1 ~ /^AccountingStorageType *$/ { gsub(/ /, "", $2); print $2 }')"
+if [[ "$accounting" == accounting_storage/slurmdbd ]]; then
+  acct_deadline=$(( $(date +%s) + SLURM_SACCT_TIMEOUT ))
+  while :; do
+    mapfile -t ACCT < <(sacct --noheader --parsable2 --allocations --jobs="$array_id" \
+      --format=JobID,NodeList,Elapsed,State,ExitCode 2>/dev/null)
+    recorded=0
+    for line in ${ACCT[@]+"${ACCT[@]}"}; do
+      IFS='|' read -r _ a_node _ a_state a_exit <<<"$line"
+      [[ "$a_state" == COMPLETED && "$a_exit" == 0:0 && -n "$a_node" && "$a_node" != None* ]] \
+        && recorded=$((recorded + 1))
+    done
+    (( recorded >= NODE_COUNT )) && break
+    (( $(date +%s) < acct_deadline )) || break
+    sleep 2
+  done
+  echo "sacct --jobs=${array_id}:"
+  sacct --allocations --jobs="$array_id" --format=JobID,JobName,NodeList,Elapsed,State,ExitCode
+  echo
+  if (( recorded != NODE_COUNT )); then
+    warn "sacct shows ${recorded}/${NODE_COUNT} task(s) COMPLETED 0:0 with a node after ${SLURM_SACCT_TIMEOUT}s"
+    status=fail
+  fi
+else
+  warn "AccountingStorageType is '${accounting:-unset}', not slurmdbd; no sacct record to check"
+  status=fail
+fi
 phase_end job-array "" "$status"
 
-echo "array ${array_id}: ${completed}/${tasks} task(s) COMPLETED 0:0, across ${#covered[@]}/${NODE_COUNT} node(s)"
+echo "array ${array_id}: ${completed}/${tasks} task(s) COMPLETED 0:0, across ${#covered[@]}/${NODE_COUNT} node(s), ${recorded:-0} in sacct"
 [[ "$status" == ok ]] || die "the job array did not run cleanly on every node"
 echo "SLURM READY — ${NODE_COUNT} node(s) joined and a job array ran on every one of them"
