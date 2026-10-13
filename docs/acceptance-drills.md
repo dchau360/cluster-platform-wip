@@ -250,10 +250,12 @@ node's own console.
 $ make rolling-update TAG=sha-baa648ba99c8
 ```
 
-Four nodes, one at a time, on an idle cluster. Per-node phases, from the
-run's NDJSON:
+Four nodes, one at a time, on an idle cluster. Columns are node index 1..4
+(the harness names them `cnNN`; the demo's per-node tables in
+[`measurements.md`](measurements.md#results) carry the names). Per-node
+phases, from the run's NDJSON:
 
-| Phase | cn01 | cn02 | cn03 | cn04 |
+| Phase | node 1 | node 2 | node 3 | node 4 |
 | --- | --- | --- | --- | --- |
 | `rolling-drain` | 0.532 | 0.441 | 0.438 | 0.442 |
 | `rolling-reimage` | 1.345 | 1.335 | 1.331 | 1.368 |
