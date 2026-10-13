@@ -1,7 +1,7 @@
 ---
 # What the rest of site.yml gives the head node before accounting matters:
-# the Slurm client tools, a Munge key, the job users, and a slurm.conf that
-# names slurmdbd (slurm_config renders it on the lab).
+# the Slurm client tools, a Munge key and the job users. No slurm.conf: the
+# role must not need one.
 - name: Stand the container in for the head node
   hosts: all
   gather_facts: false
@@ -45,17 +45,3 @@
         name: "{{ item.name }}"
         uid: "{{ item.uid }}"
       loop: "{{ cluster_job_users }}"
-
-    - name: Write the slurm.conf the accounting commands read
-      ansible.builtin.copy:
-        dest: /etc/slurm/slurm.conf
-        owner: root
-        group: root
-        mode: "0644"
-        content: |
-          ClusterName={{ lab_slurm_cluster_name }}
-          SlurmctldHost=head
-          AuthType=auth/munge
-          AccountingStorageType=accounting_storage/slurmdbd
-          AccountingStorageHost=localhost
-          AccountingStoragePort={{ lab_slurmdbd_port }}

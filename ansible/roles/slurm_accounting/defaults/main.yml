@@ -13,6 +13,7 @@ slurm_accounting_secret_dir: /etc/cluster-lab
 slurm_accounting_db_password_file: "{{ slurm_accounting_secret_dir }}/slurmdbd-db.password"
 
 slurm_accounting_conf: /etc/slurm/slurmdbd.conf
+slurm_accounting_client_conf: /etc/slurm/accounting-client.conf
 slurm_accounting_log_dir: /var/log/slurm
 slurm_accounting_port: "{{ lab_slurmdbd_port }}"
 

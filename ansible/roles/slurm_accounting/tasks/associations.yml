@@ -1,9 +1,12 @@
 ---
-# Run by slurm_controller once slurm.conf points at slurmdbd and slurmctld is
-# up: sacctmgr finds slurmdbd through slurm.conf. Each association is read
-# first and added only when missing, so a second run changes nothing.
+# Before slurmctld first connects, so it finds its cluster registered. Each
+# association is read first and added only when missing, so a second run
+# changes nothing. sacctmgr finds slurmdbd through the role's own client
+# configuration, not through slurm.conf.
 - name: Read the clusters slurmdbd knows
   when: not ansible_check_mode
+  environment:
+    SLURM_CONF: "{{ slurm_accounting_client_conf }}"
   ansible.builtin.command:
     argv: [sacctmgr, --noheader, --parsable2, show, cluster, format=Cluster]
   register: slurm_accounting_clusters
@@ -14,12 +17,16 @@
   when:
     - not ansible_check_mode
     - slurm_accounting_cluster not in slurm_accounting_clusters.stdout_lines
+  environment:
+    SLURM_CONF: "{{ slurm_accounting_client_conf }}"
   ansible.builtin.command:
     argv: [sacctmgr, --immediate, add, cluster, "{{ slurm_accounting_cluster }}"]
   changed_when: true
 
 - name: Read the accounts on the cluster
   when: not ansible_check_mode
+  environment:
+    SLURM_CONF: "{{ slurm_accounting_client_conf }}"
   ansible.builtin.command:
     argv:
       - sacctmgr
@@ -37,6 +44,8 @@
   when:
     - not ansible_check_mode
     - (slurm_accounting_account ~ '|') not in slurm_accounting_assocs.stdout_lines
+  environment:
+    SLURM_CONF: "{{ slurm_accounting_client_conf }}"
   ansible.builtin.command:
     argv:
       - sacctmgr
@@ -54,6 +63,8 @@
   when:
     - not ansible_check_mode
     - (slurm_accounting_account ~ '|' ~ item) not in slurm_accounting_assocs.stdout_lines
+  environment:
+    SLURM_CONF: "{{ slurm_accounting_client_conf }}"
   ansible.builtin.command:
     argv:
       - sacctmgr

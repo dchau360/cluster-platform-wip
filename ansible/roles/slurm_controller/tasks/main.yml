@@ -161,7 +161,7 @@
     state: restarted
   loop: [AccountingStorageType, JobAcctGatherType]
 
-- name: Wait for slurmctld to answer before sacctmgr registers with it
+- name: Wait for slurmctld to answer after the plugin check
   when: not ansible_check_mode
   ansible.builtin.command:
     cmd: scontrol ping
@@ -170,8 +170,3 @@
   retries: 15
   delay: 2
   changed_when: false
-
-- name: Create the cluster, account and users in the accounting database
-  ansible.builtin.include_role:
-    name: slurm_accounting
-    tasks_from: associations

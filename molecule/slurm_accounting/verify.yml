@@ -58,6 +58,8 @@
       no_log: true
 
     - name: Read the associations
+      environment:
+        SLURM_CONF: /etc/slurm/accounting-client.conf
       ansible.builtin.command:
         argv: [sacctmgr, --noheader, --parsable2, show, association, "format=Cluster,Account,User"]
       register: slurm_accounting_assocs

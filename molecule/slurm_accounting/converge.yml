@@ -1,17 +1,12 @@
 ---
-# The role as site.yml runs it, then the associations as slurm_controller
-# runs them once slurm.conf names slurmdbd.
+# The role as site.yml runs it, before slurm_controller: slurm.conf may still
+# be the pre-accounting one, or absent, as on a fresh head node.
 - name: Converge the accounting role
   hosts: all
   gather_facts: true
   vars_files:
     - "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/ansible/group_vars/all.yml"
   tasks:
-    - name: Install and start MariaDB and slurmdbd
+    - name: Install MariaDB and slurmdbd and create the associations
       ansible.builtin.include_role:
         name: slurm_accounting
-
-    - name: Create the cluster, account and users
-      ansible.builtin.include_role:
-        name: slurm_accounting
-        tasks_from: associations
