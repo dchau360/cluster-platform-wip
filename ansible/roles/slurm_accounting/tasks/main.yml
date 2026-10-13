@@ -193,3 +193,6 @@
 
 - name: Create the cluster, account and users
   ansible.builtin.include_tasks: associations.yml
+
+- name: Reconcile the cluster ID slurmctld saved with slurmdbd's
+  ansible.builtin.include_tasks: cluster_id.yml

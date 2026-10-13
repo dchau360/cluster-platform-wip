@@ -72,3 +72,12 @@
           - (lab_slurm_cluster_name ~ '|' ~ lab_slurm_account ~ '|' ~ item.name) in slurm_accounting_assocs.stdout_lines
         fail_msg: "{{ slurm_accounting_assocs.stdout_lines }}"
       loop: "{{ cluster_job_users }}"
+
+    - name: Stat the cluster ID slurmctld saved before accounting
+      ansible.builtin.stat:
+        path: /var/lib/slurm/slurmctld/clustername
+      register: slurm_accounting_stale_id
+
+    - name: The stale cluster ID is gone, so slurmctld takes slurmdbd's
+      ansible.builtin.assert:
+        that: not slurm_accounting_stale_id.stat.exists

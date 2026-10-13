@@ -45,3 +45,19 @@
         name: "{{ item.name }}"
         uid: "{{ item.uid }}"
       loop: "{{ cluster_job_users }}"
+
+    # A slurmctld that ran before accounting leaves the ID it made up; the
+    # role must clear it, or slurmctld would refuse slurmdbd's ID.
+    - name: Create slurmctld's state directory
+      ansible.builtin.file:
+        path: /var/lib/slurm/slurmctld
+        state: directory
+        owner: slurm
+        group: slurm
+        mode: "0755"
+
+    - name: Leave a cluster ID saved by slurmctld before accounting
+      ansible.builtin.copy:
+        dest: /var/lib/slurm/slurmctld/clustername
+        content: "{{ lab_slurm_cluster_name }}|1"
+        mode: "0644"

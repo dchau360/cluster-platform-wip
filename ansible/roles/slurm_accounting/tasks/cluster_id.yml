@@ -1,0 +1,65 @@
+---
+# A slurmctld that ran before accounting existed made up its own cluster ID
+# and saved it in StateSaveLocation. slurmdbd gives the cluster another ID
+# when it is registered, and slurmctld then refuses to start ("CLUSTER ID
+# MISMATCH") until the saved file is removed. Removing it is safe only when
+# the file names this cluster: one naming another cluster means two clusters
+# share the state directory, and that stops the play instead.
+- name: Read the cluster ID slurmctld saved
+  become: true
+  ansible.builtin.slurp:
+    src: "{{ slurm_accounting_clustername_file }}"
+  register: slurm_accounting_saved_cluster
+  failed_when: false
+
+- name: Read the cluster ID slurmdbd holds
+  become: true
+  when:
+    - not ansible_check_mode
+    - slurm_accounting_saved_cluster.content is defined
+  ansible.builtin.command:
+    argv:
+      - mariadb
+      - --batch
+      - --skip-column-names
+      - --execute=SELECT id FROM cluster_table WHERE deleted = 0 AND name = '{{ slurm_accounting_cluster }}'
+      - "{{ slurm_accounting_db_name }}"
+  register: slurm_accounting_dbd_cluster_id
+  changed_when: false
+
+- name: Compare the two cluster IDs
+  when: slurm_accounting_dbd_cluster_id.stdout is defined
+  ansible.builtin.set_fact:
+    slurm_accounting_saved_name: >-
+      {{ (slurm_accounting_saved_cluster.content | b64decode | trim).split('|')[0] }}
+    slurm_accounting_saved_id: >-
+      {{ (slurm_accounting_saved_cluster.content | b64decode | trim).split('|')[1] | default('') }}
+
+- name: Refuse a state directory saved by another cluster
+  when: slurm_accounting_saved_name is defined
+  ansible.builtin.assert:
+    that: slurm_accounting_saved_name == slurm_accounting_cluster
+    fail_msg: >-
+      {{ slurm_accounting_clustername_file }} belongs to cluster
+      {{ slurm_accounting_saved_name }}, not {{ slurm_accounting_cluster }}.
+
+- name: Stop slurmctld before it meets slurmdbd's cluster ID
+  become: true
+  when:
+    - slurm_accounting_saved_id is defined
+    - slurm_accounting_saved_id != (slurm_accounting_dbd_cluster_id.stdout | trim)
+  ansible.builtin.command:
+    argv: [systemctl, stop, slurmctld.service]
+  register: slurm_accounting_ctld_stop
+  # 5: no slurmctld unit installed yet, so nothing to stop.
+  failed_when: slurm_accounting_ctld_stop.rc not in [0, 5]
+  changed_when: slurm_accounting_ctld_stop.rc == 0
+
+- name: Drop the cluster ID slurmctld saved before accounting
+  become: true
+  when:
+    - slurm_accounting_saved_id is defined
+    - slurm_accounting_saved_id != (slurm_accounting_dbd_cluster_id.stdout | trim)
+  ansible.builtin.file:
+    path: "{{ slurm_accounting_clustername_file }}"
+    state: absent

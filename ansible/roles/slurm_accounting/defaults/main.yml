@@ -42,3 +42,6 @@ slurm_accounting_cluster: "{{ lab_slurm_cluster_name }}"
 slurm_accounting_account: "{{ lab_slurm_account }}"
 slurm_accounting_account_description: lab users
 slurm_accounting_users: "{{ cluster_job_users | map(attribute='name') | list }}"
+
+# Where slurmctld saves the cluster name and ID it last ran with.
+slurm_accounting_clustername_file: "{{ slurm_config_state_dir | default('/var/lib/slurm/slurmctld') }}/clustername"
