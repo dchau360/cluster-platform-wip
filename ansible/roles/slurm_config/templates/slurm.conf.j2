@@ -45,7 +45,16 @@ MinJobAge=300
 # The rolling-update drill's "no job loss" evidence: every job's final state.
 JobCompType=jobcomp/filetxt
 JobCompLoc={{ slurm_config_jobcomp_log }}
-AccountingStorageType=accounting_storage/none
+
+# Accounting: slurmctld sends every job and step to slurmdbd on this head
+# node, which keeps them in MariaDB (the slurm_accounting role). `sacct`,
+# `sreport` and `sacctmgr` read it there. Nodes never contact slurmdbd.
+AccountingStorageType=accounting_storage/slurmdbd
+AccountingStorageHost={{ slurm_config_accounting_storage_host }}
+AccountingStoragePort={{ lab_slurmdbd_port }}
+# Per-step CPU, memory and I/O, sampled from the job's cgroup on the node.
+JobAcctGatherType=jobacct_gather/cgroup
+JobAcctGatherFrequency={{ slurm_config_jobacct_gather_frequency }}
 
 # --- nodes: NetBox, status=active, role=compute -----------------------------
 {% for node in slurm_config_model.nodes %}

@@ -1,0 +1,24 @@
+# {{ ansible_managed }}
+#
+# Rendered by the slurm_accounting role. Do not edit: the next run replaces
+# this file. Mode 0600, owner {{ cluster_slurm_user.name }}: it holds the
+# database password, which the role reads from
+# {{ slurm_accounting_db_password_file }} on this host and nowhere else.
+AuthType=auth/munge
+# localhost, not the hostname: slurmdbd accepts it on any host, and the only
+# clients are slurmctld and sacct/sacctmgr on this same head node.
+DbdHost=localhost
+DbdPort={{ slurm_accounting_port }}
+SlurmUser={{ cluster_slurm_user.name }}
+LogFile={{ slurm_accounting_log_dir }}/slurmdbd.log
+DebugLevel=info
+
+StorageType=accounting_storage/mysql
+StorageHost=localhost
+StorageLoc={{ slurm_accounting_db_name }}
+StorageUser={{ slurm_accounting_db_user }}
+StoragePass={{ slurm_accounting_db_password }}
+
+{% for key, value in slurm_accounting_purge_after.items() %}
+{{ key }}={{ value }}
+{% endfor %}

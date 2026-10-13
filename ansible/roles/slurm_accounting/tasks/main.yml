@@ -1,0 +1,183 @@
+---
+- name: Install MariaDB and slurmdbd
+  become: true
+  ansible.builtin.apt:
+    name: "{{ slurm_accounting_packages }}"
+    state: present
+
+- name: Configure MariaDB for the accounting database
+  become: true
+  ansible.builtin.template:
+    src: 60-slurmdbd.cnf.j2
+    dest: /etc/mysql/mariadb.conf.d/60-slurmdbd.cnf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart mariadb
+
+- name: Enable and start MariaDB
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.systemd_service:
+    name: mariadb
+    enabled: true
+    state: started
+
+- name: Apply a MariaDB configuration change before using the database
+  ansible.builtin.meta: flush_handlers
+
+# The password exists only on this host. It is generated here, once, and read
+# back on every run; nothing in git or in the play's variables holds it.
+- name: Create the head node's secret directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ slurm_accounting_secret_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Generate the accounting database password
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail && umask 077 &&
+      head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'
+      > {{ slurm_accounting_db_password_file }}
+    executable: /bin/bash
+    creates: "{{ slurm_accounting_db_password_file }}"
+
+- name: Restrict the accounting database password
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.file:
+    path: "{{ slurm_accounting_db_password_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Read the accounting database password
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.slurp:
+    src: "{{ slurm_accounting_db_password_file }}"
+  register: slurm_accounting_db_password_raw
+  no_log: true
+
+- name: Hold the accounting database password
+  ansible.builtin.set_fact:
+    slurm_accounting_db_password: >-
+      {{ (slurm_accounting_db_password_raw.content | b64decode | trim)
+         if not ansible_check_mode else 'check-mode' }}
+  no_log: true
+
+# Judge the database by the one thing slurmdbd needs from it: that its user
+# can log in with the password on disk and open its database. Anything else
+# (no database, no user, a password that was regenerated) fails this, and the
+# next task repairs all of it at once.
+- name: Check slurmdbd's database login
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - mariadb
+      - --user={{ slurm_accounting_db_user }}
+      - --batch
+      - --execute=SELECT 1
+      - "{{ slurm_accounting_db_name }}"
+  environment:
+    MYSQL_PWD: "{{ slurm_accounting_db_password }}"
+  register: slurm_accounting_db_login
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+# As root over the local socket: MariaDB on Debian and Ubuntu authenticates
+# root by unix_socket, so no administrator password exists to manage.
+- name: Create the accounting database and its user
+  become: true
+  when:
+    - not ansible_check_mode
+    - slurm_accounting_db_login.rc != 0
+  ansible.builtin.command:
+    argv: [mariadb, --batch]
+    stdin: |
+      CREATE DATABASE IF NOT EXISTS `{{ slurm_accounting_db_name }}`;
+      CREATE USER IF NOT EXISTS '{{ slurm_accounting_db_user }}'@'localhost';
+      ALTER USER '{{ slurm_accounting_db_user }}'@'localhost'
+        IDENTIFIED BY '{{ slurm_accounting_db_password }}';
+      GRANT ALL PRIVILEGES ON `{{ slurm_accounting_db_name }}`.*
+        TO '{{ slurm_accounting_db_user }}'@'localhost';
+  changed_when: true
+  no_log: true
+  notify: Restart slurmdbd
+
+- name: Create the Slurm log directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ slurm_accounting_log_dir }}"
+    state: directory
+    owner: "{{ cluster_slurm_user.name }}"
+    group: "{{ cluster_slurm_user.name }}"
+    mode: "0755"
+
+- name: Render slurmdbd.conf
+  become: true
+  ansible.builtin.template:
+    src: slurmdbd.conf.j2
+    dest: "{{ slurm_accounting_conf }}"
+    owner: "{{ cluster_slurm_user.name }}"
+    group: "{{ cluster_slurm_user.name }}"
+    mode: "0600"
+  no_log: true
+  notify: Restart slurmdbd
+
+- name: Create the unit drop-in directories
+  become: true
+  ansible.builtin.file:
+    path: /etc/systemd/system/{{ item }}.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: [slurmdbd, slurmctld]
+
+- name: Order slurmdbd after MariaDB and hold its start until it listens
+  become: true
+  ansible.builtin.template:
+    src: slurmdbd-override.conf.j2
+    dest: /etc/systemd/system/slurmdbd.service.d/cluster.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart slurmdbd
+
+- name: Order slurmctld after slurmdbd
+  become: true
+  ansible.builtin.template:
+    src: slurmctld-accounting.conf.j2
+    dest: /etc/systemd/system/slurmctld.service.d/accounting.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Enable and start slurmdbd
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.systemd_service:
+    name: slurmdbd
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Apply slurmdbd changes before slurmctld uses it
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for slurmdbd to listen
+  when: not ansible_check_mode
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ slurm_accounting_port | int }}"
+    timeout: 60

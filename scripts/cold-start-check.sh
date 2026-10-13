@@ -19,6 +19,15 @@ REQUIRED_ENABLED=(
   libvirtd.socket
   docker.service
   nginx.service
+  mariadb.service
+  slurmdbd.service
+  slurmctld.service
+)
+
+# Start order that matters on a cold start: "<unit> <must start after>".
+REQUIRED_ORDER=(
+  "slurmdbd.service mariadb.service"
+  "slurmctld.service slurmdbd.service"
 )
 
 # These must NOT be enabled: they would race our own dnsmasq for the port.
@@ -54,6 +63,17 @@ for unit in "${REQUIRED_MASKED[@]}"; do
     printf '%-24s %-12s PASS\n' "$unit" "$state"
   else
     printf '%-24s %-12s FAIL would fight lab-dnsmasq for the port\n' "$unit" "$state"
+    fails=$((fails + 1))
+  fi
+done
+
+for pair in "${REQUIRED_ORDER[@]}"; do
+  unit="${pair%% *}" first="${pair#* }"
+  after=" $(systemctl show "$unit" --property=After --value 2>/dev/null || true) "
+  if [[ "$after" == *" $first "* ]]; then
+    printf '%-24s %-12s PASS starts after %s\n' "$unit" ordered "$first"
+  else
+    printf '%-24s %-12s FAIL must start after %s\n' "$unit" unordered "$first"
     fails=$((fails + 1))
   fi
 done

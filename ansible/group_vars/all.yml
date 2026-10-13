@@ -67,6 +67,9 @@ lab_slurm_cluster_name: "{{ lookup('env', 'SLURM_CLUSTER_NAME') | default('lab',
 lab_slurmctld_port: "{{ lookup('env', 'SLURMCTLD_PORT') | default(6817, true) }}"
 lab_slurmd_port: "{{ lookup('env', 'SLURMD_PORT') | default(6818, true) }}"
 lab_slurm_partition: "{{ lookup('env', 'SLURM_PARTITION') | default('compute', true) }}"
+# Accounting (slurmdbd on the head node). The account the job users belong to.
+lab_slurmdbd_port: "{{ lookup('env', 'SLURMDBD_PORT') | default(6819, true) }}"
+lab_slurm_account: "{{ lookup('env', 'SLURM_ACCOUNT') | default('lab', true) }}"
 # Memory held back from Slurm on every node, for the OS. RealMemory is the
 # NetBox-discovered memory minus this.
 lab_slurm_mem_reserve_mib: "{{ lookup('env', 'SLURM_MEM_RESERVE_MIB') | default(256, true) }}"

@@ -1,0 +1,67 @@
+---
+# Run by slurm_controller once slurm.conf points at slurmdbd and slurmctld is
+# up: sacctmgr finds slurmdbd through slurm.conf. Each association is read
+# first and added only when missing, so a second run changes nothing.
+- name: Read the clusters slurmdbd knows
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    argv: [sacctmgr, --noheader, --parsable2, show, cluster, format=Cluster]
+  register: slurm_accounting_clusters
+  changed_when: false
+
+- name: Add the cluster
+  become: true
+  when:
+    - not ansible_check_mode
+    - slurm_accounting_cluster not in slurm_accounting_clusters.stdout_lines
+  ansible.builtin.command:
+    argv: [sacctmgr, --immediate, add, cluster, "{{ slurm_accounting_cluster }}"]
+  changed_when: true
+
+- name: Read the accounts on the cluster
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - sacctmgr
+      - --noheader
+      - --parsable2
+      - show
+      - association
+      - cluster={{ slurm_accounting_cluster }}
+      - format=Account,User
+  register: slurm_accounting_assocs
+  changed_when: false
+
+- name: Add the account
+  become: true
+  when:
+    - not ansible_check_mode
+    - (slurm_accounting_account ~ '|') not in slurm_accounting_assocs.stdout_lines
+  ansible.builtin.command:
+    argv:
+      - sacctmgr
+      - --immediate
+      - add
+      - account
+      - "{{ slurm_accounting_account }}"
+      - cluster={{ slurm_accounting_cluster }}
+      - description={{ slurm_accounting_account_description }}
+      - organization={{ slurm_accounting_cluster }}
+  changed_when: true
+
+- name: Add the job users to the account
+  become: true
+  when:
+    - not ansible_check_mode
+    - (slurm_accounting_account ~ '|' ~ item) not in slurm_accounting_assocs.stdout_lines
+  ansible.builtin.command:
+    argv:
+      - sacctmgr
+      - --immediate
+      - add
+      - user
+      - "{{ item }}"
+      - account={{ slurm_accounting_account }}
+      - cluster={{ slurm_accounting_cluster }}
+  loop: "{{ slurm_accounting_users }}"
+  changed_when: true

@@ -58,7 +58,9 @@ plus its splay, which is correct and up to twenty minutes.
 submits a job array of one task per node, each asking for a whole node. The
 check is not "the array finished": it is that every task is `COMPLETED` with
 exit `0:0` **and** that the union of the nodes the tasks ran on is every node.
-Read from `scontrol`, not `sacct` — this cluster runs no accounting database.
+It reads both records of the array: `scontrol`, the controller's memory of a
+finished job, and `sacct`, the accounting database's permanent one. Each must
+show every task `COMPLETED` `0:0` with its node.
 
 Both steps are idempotent, which is why `make demo` on a live lab is cheap:
 an already-`active` node skips the burn-in phases and an already-registered
