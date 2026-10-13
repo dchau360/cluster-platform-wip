@@ -1,0 +1,48 @@
+---
+groups:
+  - name: cluster
+    rules:
+      - alert: StalePull
+        expr: >-
+          (time() - cluster_node_last_converged_timestamp_seconds
+          > 2 * scalar(cluster_pull_interval_seconds))
+          or cluster_node_convergence_success == 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.hostname }} has a stale or failed ansible-pull"
+          runbook_url: "https://github.com/dchau360/cluster-platform-wip/blob/main/docs/operations.md#stalepull"
+      - alert: BurnInFailed
+        expr: cluster_node_burnin_failed == 1
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.hostname }} failed burn-in"
+          runbook_url: "https://github.com/dchau360/cluster-platform-wip/blob/main/docs/operations.md#burninfailed"
+      - alert: NodeDown
+        expr: up{job="node"} == 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.instance }} is not exporting node metrics"
+          runbook_url: "https://github.com/dchau360/cluster-platform-wip/blob/main/docs/operations.md#nodedown"
+      - alert: SlurmctldDown
+        expr: cluster_slurmctld_up == 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "slurmctld is down"
+          runbook_url: "https://github.com/dchau360/cluster-platform-wip/blob/main/docs/operations.md#slurmctlddown"
+      - alert: SlurmNodeUnavailable
+        expr: cluster_slurm_node_unavailable == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.hostname }} is {{ $labels.state }} in Slurm"
+          runbook_url: >-
+            https://github.com/dchau360/cluster-platform-wip/blob/main/docs/operations.md#slurmnodeunavailable

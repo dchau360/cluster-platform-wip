@@ -1,0 +1,57 @@
+---
+- name: Install Alertmanager
+  become: true
+  ansible.builtin.apt:
+    name: prometheus-alertmanager
+    state: present
+
+- name: Install the local alert webhook sink
+  become: true
+  ansible.builtin.copy:
+    src: alert_webhook.py
+    dest: /usr/local/sbin/cluster-alert-webhook
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart alert webhook
+
+- name: Install the local alert webhook unit
+  become: true
+  ansible.builtin.copy:
+    src: cluster-alert-webhook.service
+    dest: /etc/systemd/system/cluster-alert-webhook.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart alert webhook
+
+- name: Configure Alertmanager
+  become: true
+  ansible.builtin.copy:
+    src: alertmanager.yml
+    dest: /etc/prometheus/alertmanager.yml
+    owner: root
+    group: root
+    mode: "0644"
+    validate: amtool check-config %s
+  notify: Restart Alertmanager
+
+- name: Apply receiver changes before starting Alertmanager
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable local alert delivery
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.systemd_service:
+    name: cluster-alert-webhook
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Enable Alertmanager
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.systemd_service:
+    name: prometheus-alertmanager
+    enabled: true
+    state: started

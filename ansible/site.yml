@@ -47,4 +47,5 @@
     - sushy_emulator
     - node_api
     - slurm_controller
+    - alertmanager
     - prometheus

@@ -177,6 +177,19 @@ jobs:
       # IB hardware. No third-party dependency, so nothing to install.
       - run: python3 -m unittest discover -s netbox -p 'test_*.py' -v
 
+  alert-rules:
+    name: Prometheus alert rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Prometheus and Alertmanager tools
+        run: sudo apt-get update && sudo apt-get install -y prometheus prometheus-alertmanager
+      - name: Check and test alert rules and receiver configuration
+        run: |
+          promtool check rules ansible/roles/prometheus/files/cluster.rules.yml
+          promtool test rules monitoring/cluster.rules.test.yml
+          amtool check-config ansible/roles/alertmanager/files/alertmanager.yml
+
   node-roles:
     name: node roles and unit tests
     runs-on: ubuntu-latest

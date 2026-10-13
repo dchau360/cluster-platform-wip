@@ -1,0 +1,16 @@
+[Unit]
+Description=Lab Alertmanager webhook journal sink
+After=network.target
+
+[Service]
+ExecStart=/usr/local/sbin/cluster-alert-webhook
+Restart=on-failure
+RestartSec=5
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

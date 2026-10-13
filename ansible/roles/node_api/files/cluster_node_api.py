@@ -328,12 +328,12 @@ def fleet(nb, role_slug):
 RUNNING_STATUSES = ("staged", "active", "failed")
 
 
-def render_metrics(rows) -> str:
+def render_metrics(rows, pull_interval_seconds=900) -> str:
     out = [
         "# HELP cluster_node_last_converged_timestamp_seconds When the node last reported a pull run.",
         "# TYPE cluster_node_last_converged_timestamp_seconds gauge",
     ]
-    success, duration, info = [], [], []
+    success, duration, info, burnin = [], [], [], []
     for device, hostname, _address in rows:
         # Only a node that runs pulls can be stale or failed; a planned or
         # offline device exported as 0 would fire both alerts forever.
@@ -355,12 +355,20 @@ def render_metrics(rows) -> str:
             f'cluster_node_convergence_info{{{labels},git_sha="{_label(custom.get("last_git_sha"))}",'
             f'image_tag="{_label(custom.get("image_tag"))}",'
             f'status="{_label(_value(device.get("status")))}"}} 1')
+        burnin.append(
+            f"cluster_node_burnin_failed{{{labels}}} "
+            f"{1 if _value(device.get('status')) == 'failed' else 0}")
     out += ["# HELP cluster_node_convergence_success 1 if the last pull run succeeded.",
             "# TYPE cluster_node_convergence_success gauge", *success,
             "# HELP cluster_node_convergence_duration_seconds Wall time of the last pull run.",
             "# TYPE cluster_node_convergence_duration_seconds gauge", *duration,
             "# HELP cluster_node_convergence_info Commit and image of the last pull run.",
-            "# TYPE cluster_node_convergence_info gauge", *info]
+            "# TYPE cluster_node_convergence_info gauge", *info,
+            "# HELP cluster_node_burnin_failed 1 when the NetBox burn-in gate rejected the node.",
+            "# TYPE cluster_node_burnin_failed gauge", *burnin,
+            "# HELP cluster_pull_interval_seconds Configured ansible-pull timer interval.",
+            "# TYPE cluster_pull_interval_seconds gauge",
+            f"cluster_pull_interval_seconds {int(pull_interval_seconds)}"]
     return "\n".join(out) + "\n"
 
 
@@ -419,7 +427,9 @@ def make_handler(nb, settings):
                 self._guard(lambda: self._send(HTTPStatus.OK, node_facts(nb, client, settings)))
             elif self.path == "/metrics":
                 self._guard(lambda: self._send(
-                    HTTPStatus.OK, render_metrics(fleet(nb, settings["role_slug"])),
+                    HTTPStatus.OK, render_metrics(
+                        fleet(nb, settings["role_slug"]),
+                        settings.get("pull_interval_seconds", 900)),
                     "text/plain; version=0.0.4"))
             elif self.path == "/v1/sd/node-exporter":
                 self._guard(lambda: self._send(
@@ -456,6 +466,7 @@ def main():
         "controller_address": os.environ["NODE_API_CONTROLLER_ADDRESS"],
         "slurmctld_port": int(os.environ.get("NODE_API_SLURMCTLD_PORT", "6817")),
         "node_exporter_port": int(os.environ.get("NODE_API_NODE_EXPORTER_PORT", "9100")),
+        "pull_interval_seconds": int(os.environ.get("NODE_API_PULL_INTERVAL_SECONDS", "900")),
     }
     env_file = os.environ.get("NODE_API_NETBOX_ENV", "/etc/cluster-lab/netbox.env")
     values = {}

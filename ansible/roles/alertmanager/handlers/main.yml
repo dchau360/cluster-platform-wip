@@ -1,0 +1,15 @@
+---
+- name: Restart alert webhook
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.systemd_service:
+    name: cluster-alert-webhook
+    state: restarted
+    daemon_reload: true
+
+- name: Restart Alertmanager
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.systemd_service:
+    name: prometheus-alertmanager
+    state: restarted

@@ -1,0 +1,100 @@
+---
+rule_files:
+  - ../ansible/roles/prometheus/files/cluster.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'cluster_node_last_converged_timestamp_seconds{hostname="cn01"}'
+        values: '0+0x40'
+      - series: 'cluster_node_convergence_success{hostname="cn01"}'
+        values: '1+0x40'
+      - series: cluster_pull_interval_seconds
+        values: '900+0x40'
+    alert_rule_test:
+      - eval_time: 34m
+        alertname: StalePull
+        exp_alerts:
+          - exp_labels:
+              alertname: StalePull
+              hostname: cn01
+              severity: page
+            exp_annotations:
+              summary: cn01 has a stale or failed ansible-pull
+              runbook_url: https://github.com/dchau360/cluster-platform-wip/blob/main/docs/operations.md#stalepull
+
+  - interval: 1m
+    input_series:
+      - series: 'cluster_node_convergence_success{hostname="cn02"}'
+        values: '0+0x5'
+      - series: 'cluster_node_last_converged_timestamp_seconds{hostname="cn02"}'
+        values: '120+0x5'
+      - series: cluster_pull_interval_seconds
+        values: '900+0x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: StalePull
+        exp_alerts:
+          - exp_labels:
+              alertname: StalePull
+              hostname: cn02
+              severity: page
+            exp_annotations:
+              summary: cn02 has a stale or failed ansible-pull
+              runbook_url: https://github.com/dchau360/cluster-platform-wip/blob/main/docs/operations.md#stalepull
+
+  - interval: 1m
+    input_series:
+      - series: 'cluster_node_burnin_failed{hostname="cn03"}'
+        values: '1+0x3'
+      - series: 'up{job="node",instance="10.42.0.22:9100"}'
+        values: '0+0x4'
+      - series: cluster_slurmctld_up
+        values: '0+0x3'
+      - series: 'cluster_slurm_node_unavailable{hostname="cn04",state="drain"}'
+        values: '1+0x7'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: BurnInFailed
+        exp_alerts:
+          - exp_labels:
+              alertname: BurnInFailed
+              hostname: cn03
+              severity: page
+            exp_annotations:
+              summary: cn03 failed burn-in
+              runbook_url: https://github.com/dchau360/cluster-platform-wip/blob/main/docs/operations.md#burninfailed
+      - eval_time: 3m
+        alertname: NodeDown
+        exp_alerts:
+          - exp_labels:
+              alertname: NodeDown
+              instance: 10.42.0.22:9100
+              job: node
+              severity: page
+            exp_annotations:
+              summary: 10.42.0.22:9100 is not exporting node metrics
+              runbook_url: https://github.com/dchau360/cluster-platform-wip/blob/main/docs/operations.md#nodedown
+      - eval_time: 2m
+        alertname: SlurmctldDown
+        exp_alerts:
+          - exp_labels:
+              alertname: SlurmctldDown
+              severity: page
+            exp_annotations:
+              summary: slurmctld is down
+              runbook_url: https://github.com/dchau360/cluster-platform-wip/blob/main/docs/operations.md#slurmctlddown
+      - eval_time: 6m
+        alertname: SlurmNodeUnavailable
+        exp_alerts:
+          - exp_labels:
+              alertname: SlurmNodeUnavailable
+              hostname: cn04
+              severity: warning
+              state: drain
+            exp_annotations:
+              summary: cn04 is drain in Slurm
+              runbook_url: >-
+                https://github.com/dchau360/cluster-platform-wip/blob/main/docs/operations.md#slurmnodeunavailable

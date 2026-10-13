@@ -5,3 +5,4 @@ node_api_bind: "{{ lab_prov_gw }}"
 node_api_port: "{{ lab_node_api_port }}"
 node_api_netbox_env: /etc/cluster-lab/netbox.env
 node_api_role_slug: compute
+node_api_pull_interval_seconds: "{{ lab_pull_interval_seconds }}"
