@@ -69,6 +69,7 @@ findings=0
 finding() { findings=$((findings + 1)); printf '%sFAIL%s %s\n' "$RED" "$RST" "$*"; }
 pass()    { printf '%sok%s   %s\n' "$GRN" "$RST" "$*"; }
 skip()    { printf '%sskip%s %s\n' "$YLW" "$RST" "$*"; }
+note()    { printf '%snote%s %s\n' "$YLW" "$RST" "$*"; }
 section() { printf '\n== %s\n' "$*"; }
 
 # Split one `file:line:text` record from git grep. Matched text may contain
@@ -131,6 +132,7 @@ unquote() {
 declare -A HOST_SPECIFIC=()
 declare -A TAGGED=()
 declare -A DECLARED=()
+declare -A RETIRED=()
 
 HS_MANIFEST="lab/host-specific.vars"
 if [[ -f "$HS_MANIFEST" ]]; then
@@ -147,6 +149,11 @@ while IFS= read -r line; do
   DECLARED["$name"]=1
   if [[ "$line" =~ [[:space:]]#[[:space:]]*host-specific([[:space:]]|$) ]]; then
     TAGGED["$name"]=1
+  fi
+  # A retired name is one the code no longer reads. It stays declared so a
+  # local.env copied from an older example still passes check 3.
+  if [[ "$line" =~ [[:space:]]#[[:space:]]*retired([[:space:]]|$) ]]; then
+    RETIRED["$name"]=1
   fi
 done < <(grep -E '^[[:space:]]*#?[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=' "$ENV_EXAMPLE" || true)
 
@@ -229,6 +236,10 @@ else
     finding "$key is set in $ENV_FILE but is not declared in $ENV_EXAMPLE"
   done < <(grep -oE '^[A-Za-z_][A-Za-z0-9_]*' "$ENV_FILE" | sort -u || true)
   (( undeclared > 0 )) || pass "every variable in $ENV_FILE is declared in the example"
+  while IFS= read -r key; do
+    [[ -n "$key" && -n "${RETIRED[$key]-}" ]] || continue
+    note "$key is retired and ignored; it can be deleted from $ENV_FILE"
+  done < <(grep -oE '^[A-Za-z_][A-Za-z0-9_]*' "$ENV_FILE" | sort -u || true)
 fi
 
 # ---------------------------------------------------------------------------
@@ -261,6 +272,9 @@ else
     if [[ -z "${HOST_SPECIFIC[$key]-}" ]]; then
       # Identical to the shipped example: a default, not a host value.
       [[ "${EXAMPLE_VAL[$key]-$'\x01'}" != "$val" ]] || continue
+      # Retired: the code overwrites it, and its old value is the old
+      # repo-defined segment that docs and the regression test still cite.
+      [[ -z "${RETIRED[$key]-}" ]] || continue
       # Too short or purely numeric: cannot identify a host and would only
       # produce noise. Node counts, memory sizes and timeouts live here.
       (( ${#val} >= 4 )) || continue
@@ -298,16 +312,14 @@ fi
 # ---------------------------------------------------------------------------
 section "check 5: only allowlisted IPv4 literals in tracked files"
 
-# Allowed: the three fixed, repo-defined lab segments; loopback and wildcard
+# Allowed: the three fixed, repo-defined /22 lab segments; loopback and wildcard
 # addresses; common netmasks; and the three RFC 5737 documentation ranges.
 ip_allowed() {
   case "$1" in
-    10.41.0.*)                                 return 0 ;;  # BMC lab segment
-    10.42.0.*)                                 return 0 ;;  # provisioning segment
-    10.43.0.*)                                 return 0 ;;  # data lab segment
+    10.4[0-9].*|10.50.*)                       return 0 ;;  # repo-defined lab segments
     127.0.0.1)                                 return 0 ;;
     0.0.0.0)                                   return 0 ;;
-    255.255.255.0|255.255.255.255|255.255.0.0) return 0 ;;
+    255.255.252.0|255.255.255.0|255.255.255.255|255.255.0.0) return 0 ;;
     192.0.2.*)                                 return 0 ;;  # RFC 5737 TEST-NET-1
     198.51.100.*)                              return 0 ;;  # RFC 5737 TEST-NET-2
     203.0.113.*)                               return 0 ;;  # RFC 5737 TEST-NET-3

@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Idempotently materialize the repository definition in NetBox."""
 import argparse
-import ipaddress
 import os
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import pynetbox
 import yaml
+
+from address_plan import node_address
 
 
 def normalize(value):
@@ -42,6 +43,26 @@ def ensure(endpoint, lookup, values, create_only=None):
         obj.update(values)
         return 1
     return 0
+
+
+def ensure_allocation(endpoint, description, values):
+    """Reconcile one named IP allocation, removing pre-migration duplicates."""
+    matches = [obj for obj in endpoint.filter(description=description)
+               if normalize(getattr(obj, "description", "")) == normalize(description)]
+    if not matches:
+        endpoint.create(values)
+        return 1
+    changes = 0
+    obj = matches[0]
+    for duplicate in matches[1:]:
+        duplicate.delete()
+        changes += 1
+    ignored = {"assigned_object_type", "assigned_object_id"}
+    if any(normalize(getattr(obj, key, "")) != normalize(value)
+           for key, value in values.items() if key not in ignored):
+        obj.update(values)
+        changes += 1
+    return changes
 
 
 def node_mac(index):
@@ -173,7 +194,9 @@ def main():
     dtype = definition["device_type"]
     changes += ensure(nb.dcim.device_types, {"slug": dtype["slug"]}, {"model": dtype["model"], "slug": dtype["slug"], "manufacturer": manufacturer.id, "u_height": 1})
     for name, cidr in definition["prefixes"].items():
-        changes += ensure(nb.ipam.prefixes, {"prefix": cidr}, {"prefix": cidr, "description": name, "status": "active", "is_pool": False})
+        # Description is the stable identity. Keying by CIDR would leave the
+        # superseded /24 behind when the plan moves to a /22.
+        changes += ensure(nb.ipam.prefixes, {"description": name}, {"prefix": cidr, "description": name, "status": "active", "is_pool": False})
     for name, address_range in definition["pools"].items():
         start, end = address_range.split("-")
         start, end = f"{start}/32", f"{end}/32"
@@ -182,6 +205,11 @@ def main():
         # second range left behind at the old start.
         description = f"{name} allocation pool"
         changes += ensure(nb.ipam.ip_ranges, {"description": description}, {"start_address": start, "end_address": end, "status": "active", "description": description, "mark_utilized": False})
+    dynamic_start, dynamic_end = definition["address_plan"]["dynamic_pool"].split("-")
+    description = "provisioning dynamic/discovery pool"
+    changes += ensure(nb.ipam.ip_ranges, {"description": description},
+                      {"start_address": f"{dynamic_start}/32", "end_address": f"{dynamic_end}/32",
+                       "status": "active", "description": description, "mark_utilized": False})
     for field in definition["custom_fields"]:
         # Fields are declared as text for broad NetBox-version compatibility;
         # writers retain the typed semantics in their values. `object_types`
@@ -197,11 +225,8 @@ def main():
     dtype_obj = nb.dcim.device_types.get(slug=dtype["slug"])
     prefix = os.getenv("NODE_NAME_PREFIX") or "cn"
     domain = os.getenv("PROV_DOMAIN") or "lab.internal"
-    # Node i is `<network>.<offset + i>`. This is the same variable
-    # scripts/lib/common.sh node_ip() and the Warewulf role read; a hardcoded
-    # offset here is a third copy that can silently disagree with both, which
-    # is exactly what happened (10 in the harness, 19 here).
-    node_ip_offset = int(os.getenv("PROV_NODE_IP_OFFSET") or "19")
+    # address_plan.py is shared with the harness; Warewulf then reads the
+    # resulting provisioning address from NetBox rather than recomputing it.
     for index in range(1, args.nodes + 1):
         # Host identity is rack position; MAC replacement cannot rename it.
         hostname = f"{rack.name}-u{index:02d}"
@@ -213,8 +238,9 @@ def main():
         interface = nb.dcim.interfaces.get(device_id=device.id, name="provisioning")
         changes += ensure_primary_mac(nb, interface, node_mac(index))
         for network_name, cidr in definition["prefixes"].items():
-            address = str(ipaddress.ip_network(cidr)[node_ip_offset + index]) + "/" + cidr.split("/")[1]
-            values = {"address": address, "status": "active", "description": f"{network_name} for {hostname}"}
+            address = str(node_address(index, args.definition, network_name)) + "/" + cidr.split("/")[1]
+            description = f"{network_name} for {hostname}"
+            values = {"address": address, "status": "active", "description": description}
             if network_name == "provisioning":
                 # The OS hostname is a property of the address the node holds,
                 # which is where DNS would put it. The device name stays the
@@ -222,7 +248,10 @@ def main():
                 # namespaces, and the Slurm NodeName is read from it.
                 values.update({"assigned_object_type": "dcim.interface", "assigned_object_id": interface.id,
                                "dns_name": f"{prefix}{index:02d}.{domain}"})
-            changes += ensure(nb.ipam.ip_addresses, {"address": address}, values)
+            # The description is the stable allocation identity. Looking up by
+            # address would create a second record on a prefix migration and
+            # leave dnsmasq free to select the stale reservation.
+            changes += ensure_allocation(nb.ipam.ip_addresses, description, values)
     changes += ensure_fabric(nb, definition, site_obj, args.nodes)
     print(f"changed={changes}")
 

@@ -489,8 +489,8 @@
 
 # NetBox is the source of truth for a node's address: the DNS name on its
 # provisioning address is its hostname, so the address is looked up by name.
-# The offset formula is only the fallback for a node NetBox does not know yet.
-# Warewulf, dnsmasq and the node API then all agree on one address per node.
+# There is deliberately no second address formula here: Warewulf, dnsmasq and
+# the node API must all consume the exact address seeded into NetBox.
 - name: Read node addresses from NetBox
   when: netbox_runtime_token is defined
   ansible.builtin.uri:
@@ -512,12 +512,17 @@
       {{ warewulf_server_node_addresses | default({})
          | combine({(lab_node_name_prefix ~ ('%02d' | format(item.item))):
                     ((item.json.results | default([]) | map(attribute='address') | first | default(''))
-                      | regex_replace('/.*$', ''))
-                    or (warewulf_server_node_ip_prefix ~ '.'
-                        ~ ((warewulf_server_node_ip_offset | int) + item.item))}) }}
+                      | regex_replace('/.*$', ''))}) }}
   loop: "{{ warewulf_server_netbox_addresses.results | default([]) }}"
   loop_control:
     label: "{{ lab_node_name_prefix }}{{ '%02d' | format(item.item) }}"
+
+- name: Assert NetBox supplied every Warewulf node address
+  ansible.builtin.assert:
+    that:
+      - warewulf_server_node_addresses | default({}) | length == lab_node_count | int
+      - warewulf_server_node_addresses.values() | reject('equalto', '') | list | length == lab_node_count | int
+    fail_msg: NetBox did not return one provisioning address for every requested node
 
 - name: Define every node from the node count
   become: true
@@ -528,8 +533,7 @@
   ansible.builtin.command:
     cmd: >-
       wwctl node add {{ lab_node_name_prefix }}{{ '%02d' | format(item) }}
-      --ipaddr {{ (warewulf_server_node_addresses | default({}))[lab_node_name_prefix ~ ('%02d' | format(item))]
-                  | default(warewulf_server_node_ip_prefix ~ '.' ~ ((warewulf_server_node_ip_offset | int) + item)) }}
+      --ipaddr {{ warewulf_server_node_addresses[lab_node_name_prefix ~ ('%02d' | format(item))] }}
       --netdev {{ warewulf_server_node_netdev }}
       --hwaddr {{ warewulf_server_mac_oui }}:00:{{ '%02x' | format(item // 256) }}:{{ '%02x' | format(item % 256) }}
   loop: "{{ range(1, (lab_node_count | int) + 1) | list }}"

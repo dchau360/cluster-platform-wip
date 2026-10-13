@@ -17,14 +17,13 @@ lab_node_names: >-
 # same environment the harness reads, so a node's address is computed one
 # way in shell and, from the same inputs, one way in Ansible.
 lab_prov_bridge: "{{ lookup('env', 'PROV_BRIDGE') | default('br-prov', true) }}"
-lab_prov_gw: "{{ lookup('env', 'PROV_GW') | default('10.42.0.1', true) }}"
+lab_prov_gw: "{{ lookup('env', 'PROV_GW') }}"
 lab_prov_domain: "{{ lookup('env', 'PROV_DOMAIN') | default('lab.internal', true) }}"
-lab_prov_prefix: "{{ lookup('env', 'PROV_PREFIX') | default('24', true) }}"
+lab_prov_prefix: "{{ lookup('env', 'PROV_PREFIX') }}"
 lab_prov_network: >-
-  {{ (lookup('env', 'PROV_CIDR') | default('10.42.0.0/24', true))
+  {{ lookup('env', 'PROV_CIDR')
      | regex_replace('/.*$', '') }}
-lab_prov_netmask: "{{ lookup('env', 'PROV_NETMASK') | default('255.255.255.0', true) }}"
-lab_node_ip_offset: "{{ lookup('env', 'PROV_NODE_IP_OFFSET') | default('19', true) }}"
+lab_prov_netmask: "{{ lookup('env', 'PROV_NETMASK') }}"
 
 # NetBox as seen from a node on the provisioning segment.
 #
