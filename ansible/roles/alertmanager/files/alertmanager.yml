@@ -12,5 +12,5 @@ route:
 receivers:
   - name: lab-webhook
     webhook_configs:
-      - url: http://127.0.0.1:9094/alerts
+      - url: http://127.0.0.1:9095/alerts
         send_resolved: true

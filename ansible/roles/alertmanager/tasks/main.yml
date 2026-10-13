@@ -33,6 +33,7 @@
     owner: root
     group: root
     mode: "0644"
+    validate: amtool check-config %s
   notify: Restart Alertmanager
 
 - name: Enable local alert delivery
