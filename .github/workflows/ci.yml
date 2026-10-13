@@ -161,6 +161,8 @@ jobs:
           git ls-files '*.sh' | while read -r f; do bash -n "$f"; echo "ok $f"; done
       - name: Node count is a variable, never a constant
         run: ./scripts/check-node-count-is-variable.sh
+      - name: The example env file is safe to source
+        run: ./scripts/check-env-example-is-sourceable.sh
 
   python-tests:
     name: python tests

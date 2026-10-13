@@ -175,7 +175,7 @@ warewulf_server_pull_overlay: cluster-pull
 # the formula stays in one place and these are derived from the same
 # environment, so a change to PROV_MAC_OUI or the IP offset lands in both.
 warewulf_server_mac_oui: "{{ lookup('env', 'PROV_MAC_OUI') | default('52:54:00', true) }}"
-warewulf_server_node_ip_offset: "{{ lab_node_ip_offset | default(10) }}"
+warewulf_server_node_ip_offset: "{{ lab_node_ip_offset | default(19) }}"
 warewulf_server_node_netdev: eth0
 warewulf_server_node_netname: default
 

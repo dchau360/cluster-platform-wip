@@ -17,8 +17,9 @@ services, the automation and the measurement harness. Node images live in
 ```sh
 cp lab/local.env.example lab/local.env   # fill in the host-specific values
 make up                                  # bring the platform up, idempotent
-make demo N=2                            # start 2 nodes, print the timings
+make demo N=2                            # 2 nodes, power-off to Slurm-ready
 make demo N=4                            # same code, 4 nodes
+make acceptance                          # the whole curve, then every drill
 make down                                # stop the lab
 ```
 
@@ -26,11 +27,15 @@ make down                                # stop the lab
 
 ## What is here today
 
-The boot chain works end to end on the lab: a q35/OVMF node PXE-boots,
-Warewulf serves it a node image imported from a public GHCR package with no
-credential anywhere, and the node reaches a login prompt with its identity
-(Munge key, SSH host keys) delivered by overlay. The measured 1-to-N curve
-is in [`docs/measurements.md`](docs/measurements.md).
+`make demo N=<n>` goes from powered-off VMs to a cluster that takes work,
+with no manual step: a q35/OVMF node PXE-boots, Warewulf serves it a node
+image imported from a public GHCR package with no credential anywhere, the
+node configures itself by `ansible-pull` from a pinned ref, runs its own
+burn-in, is promoted by the acceptance gate on the head node, registers with
+`slurmctld`, and a job array runs a task on every node. The measured 1-to-N
+curve is in [`docs/measurements.md`](docs/measurements.md) and the analysis
+of where it breaks at 100 nodes is in
+[`docs/scale-analysis.md`](docs/scale-analysis.md).
 
 | Working now | Where |
 | --- | --- |
@@ -41,7 +46,9 @@ is in [`docs/measurements.md`](docs/measurements.md).
 | NetBox as source of truth; dnsmasq reservations rendered from it | `ansible/roles/netbox/`, `ansible/roles/dnsmasq/` |
 | Discovery boot that registers itself in NetBox and claims its IPAM address | `scripts/discover.sh`, `cluster-images-wip` |
 | Redfish power and boot order via `sushy-emulator` | `ansible/roles/sushy_emulator/`, `scripts/redfish.sh` |
-| One-command rollback, `N=2`/`N=4`, re-provision and NIC-swap drills | `Makefile`, `docs/acceptance-drills.md` |
+| Burn-in gate, Slurm registration and a job array on every node | `scripts/nodes-activate.sh`, `scripts/slurm-ready.sh` |
+| Soft-RoCE RDMA: a real `perftest` number over `rdma_rxe`, no IB hardware | `scripts/rdma-test.sh`, `docs/rdma-soft-roce.md` |
+| Rollback, rolling update, re-provision, NIC swap and cold-start drills | `Makefile`, `docs/acceptance-drills.md` |
 | Per-phase, per-node timing, NDJSON plus CSV | `scripts/lib/timing.sh` |
 | Every lab service a systemd unit enabled at boot | `systemd/` |
 
@@ -57,6 +64,10 @@ exercised only against synthetic GUID data. See
 - **Vendor BIOS attributes.** `sushy-emulator` gives real power control and
 real boot-order changes, but its Redfish `BIOS` resource is a fixed synthetic
 set, not firmware. See [`docs/redfish.md`](docs/redfish.md).
+- **Anything above four nodes.** The host fits a handful of guests, so the
+DHCP and image-pull stampede at 100 nodes is arithmetic over a measured
+per-node cost, not an observation. Where it breaks, and what would have to
+change, is in [`docs/scale-analysis.md`](docs/scale-analysis.md).
 
 ## Structure
 

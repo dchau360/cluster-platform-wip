@@ -1,0 +1,30 @@
+---
+# Soft-RoCE (`rdma_rxe`): a software RDMA data path over an ordinary Ethernet
+# NIC.
+#
+# What it is: the kernel driver presents the node's existing NIC as an RDMA
+# device, so libibverbs programs — `perftest`, MPI — run over a genuine verbs
+# path: queue pairs, memory registration, completion queues, RDMA WRITE and
+# SEND on the wire.
+#
+# What it is not: InfiniBand hardware. There is no HCA, no hardware offload
+# and no subnet manager. Every packet is still built and copied by the host
+# CPU, so the bandwidth it reports is a property of this software path, not a
+# prediction of what an HCA would do.
+#
+# It is configured here, on the node, because the node is the only thing that
+# knows which of its links holds the provisioning address, and because a
+# compute node has no inbound SSH for anyone to configure it over.
+rdma_soft_roce_enabled: true
+
+# A missing driver or a missing RDMA userspace is reported and skipped, not
+# failed: a node with no RDMA device is still a working compute node, and the
+# check-mode CI job runs this play in a container where no kernel module can
+# be loaded at all. Set this true where an RDMA device is part of the
+# definition of a healthy node.
+rdma_soft_roce_required: false
+
+# The RDMA link name the benchmark asks for by `-d`.
+rdma_soft_roce_link_name: rxe0
+
+rdma_soft_roce_module: rdma_rxe

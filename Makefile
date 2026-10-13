@@ -27,8 +27,9 @@ export N
         rolling-update burnin-gate check-node-roles test-python \
         systemd-install verify verify-isolation verify-idempotent \
         redfish redfish-demo converge rollback drill-nic-swap drill-reprovision \
-        acceptance \
-        check-host-values lint lint-yaml lint-ansible lint-shell secrets \
+        drill-cold-start \
+        acceptance nodes-activate slurm-ready rdma-test \
+        check-host-values check-env-example lint lint-yaml lint-ansible lint-shell secrets \
         tracked-secrets git-identity cold-start-check
 
 help: ## Show this help
@@ -54,7 +55,10 @@ drill-nic-swap: ## Swap a node's MAC; prove hostname and NetBox identity hold
 drill-reprovision: ## Rebuild one node from bare metal; every neighbour stays up
 	@$(RUN) $(S)/drill-reprovision.sh
 
-acceptance: ## Run the acceptance drills in order (TAG=<tag> for the rollback)
+drill-cold-start: ## One stage of the cold-start drill. make drill-cold-start STAGE=before|after
+	@$(RUN) $(S)/drill-cold-start.sh $(STAGE)
+
+acceptance: ## Run every acceptance drill in order (TAG=<tag> for the rollback)
 	@$(RUN) $(S)/acceptance-drills.sh
 
 down: ## Stop nodes and the provisioning segment; units stay enabled
@@ -63,8 +67,17 @@ down: ## Stop nodes and the provisioning segment; units stay enabled
 down-hard: ## Stop everything and disable the units too
 	@HARD=1 $(RUN) $(S)/down.sh
 
-demo: ## up + start N nodes + timing table.  make demo N=4
+demo: ## up + N nodes + burn-in + Slurm-ready + timing table.  make demo N=4
 	@$(RUN) $(S)/demo.sh
+
+nodes-activate: ## Take every staged node through burn-in and the gate to active
+	@$(RUN) $(S)/nodes-activate.sh
+
+slurm-ready: ## Wait for every node to join Slurm, then run a job array on all of them
+	@$(RUN) $(S)/slurm-ready.sh
+
+rdma-test: ## Soft-RoCE bandwidth between a node pair, with perftest
+	@$(RUN) $(S)/rdma-test.sh
 
 nodes-up: ## Define and start N nodes on the segment
 	@$(RUN) $(S)/nodes-up.sh
@@ -146,10 +159,13 @@ need = @command -v $(1) >/dev/null 2>&1 || { \
 	  printf 'error: %s not found, so this gate cannot run.\n       %s\n' '$(1)' '$(2)' >&2; \
 	  exit 127; }
 
-lint: check-host-values secrets tracked-secrets git-identity lint-yaml lint-ansible lint-shell check-node-roles test-python ## Run every repo gate
+lint: check-host-values check-env-example secrets tracked-secrets git-identity lint-yaml lint-ansible lint-shell check-node-roles test-python ## Run every repo gate
 
 check-host-values: ## Fail if any host-specific value is in a tracked file
 	@$(RUN) $(S)/check-no-host-values.sh
+
+check-env-example: ## Fail if lab/local.env.example is not safe to source
+	@$(RUN) $(S)/check-env-example-is-sourceable.sh
 
 tracked-secrets: ## Fail if a tracked file is named like key material or lab state
 	@$(RUN) $(S)/check-no-tracked-secrets.sh

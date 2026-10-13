@@ -197,6 +197,11 @@ def main():
     dtype_obj = nb.dcim.device_types.get(slug=dtype["slug"])
     prefix = os.getenv("NODE_NAME_PREFIX") or "cn"
     domain = os.getenv("PROV_DOMAIN") or "lab.internal"
+    # Node i is `<network>.<offset + i>`. This is the same variable
+    # scripts/lib/common.sh node_ip() and the Warewulf role read; a hardcoded
+    # offset here is a third copy that can silently disagree with both, which
+    # is exactly what happened (10 in the harness, 19 here).
+    node_ip_offset = int(os.getenv("PROV_NODE_IP_OFFSET") or "19")
     for index in range(1, args.nodes + 1):
         # Host identity is rack position; MAC replacement cannot rename it.
         hostname = f"{rack.name}-u{index:02d}"
@@ -208,7 +213,7 @@ def main():
         interface = nb.dcim.interfaces.get(device_id=device.id, name="provisioning")
         changes += ensure_primary_mac(nb, interface, node_mac(index))
         for network_name, cidr in definition["prefixes"].items():
-            address = str(ipaddress.ip_network(cidr)[19 + index]) + "/" + cidr.split("/")[1]
+            address = str(ipaddress.ip_network(cidr)[node_ip_offset + index]) + "/" + cidr.split("/")[1]
             values = {"address": address, "status": "active", "description": f"{network_name} for {hostname}"}
             if network_name == "provisioning":
                 # The OS hostname is a property of the address the node holds,
