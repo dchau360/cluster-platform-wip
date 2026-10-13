@@ -36,6 +36,9 @@
     validate: amtool check-config %s
   notify: Restart Alertmanager
 
+- name: Apply receiver changes before starting Alertmanager
+  ansible.builtin.meta: flush_handlers
+
 - name: Enable local alert delivery
   become: true
   when: not ansible_check_mode
