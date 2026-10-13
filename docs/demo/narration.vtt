@@ -1,0 +1,317 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:02.917
+Four servers, powered off, on a bench.
+
+00:00:02.917 --> 00:00:03.750
+One command.
+
+00:00:03.750 --> 00:00:08.750
+Four and a half minutes later they are a
+Slurm cluster that
+
+00:00:08.750 --> 00:00:12.917
+has just run a job on every one of them.
+
+00:00:12.917 --> 00:00:17.500
+No console, no answer file, no manual step
+in the middle.
+
+00:00:17.500 --> 00:00:19.583
+That is the whole claim,
+
+00:00:19.583 --> 00:00:24.167
+and everything after this is the machinery
+that makes it true.
+
+00:00:24.167 --> 00:00:29.167
+Between a powered-off machine and a job
+there is a pipeline most
+
+00:00:29.167 --> 00:00:33.750
+people never see: firmware, a DHCP offer
+on an isolated segment,
+
+00:00:33.750 --> 00:00:37.917
+a TFTP fetch, an iPXE script, a kernel, an
+initramfs,
+
+00:00:37.917 --> 00:00:41.250
+a root filesystem that arrives over the
+network,
+
+00:00:41.250 --> 00:00:45.417
+an identity that comes from somewhere
+other than the image,
+
+00:00:45.417 --> 00:00:47.917
+a burn-in that gates the node,
+
+00:00:47.917 --> 00:00:52.500
+and a scheduler that has to be told the
+node exists.
+
+00:00:52.500 --> 00:00:57.083
+This repository builds that pipeline and
+times every phase of it,
+
+00:00:57.083 --> 00:00:58.750
+per node, every run.
+
+00:00:58.750 --> 00:01:02.083
+The timing is the deliverable, not a
+by-product.
+
+00:01:02.083 --> 00:01:03.750
+Here is the run.
+
+00:01:03.750 --> 00:01:07.500
+`make demo N=2`: two nodes, from power-off
+to Slurm-ready.
+
+00:01:07.500 --> 00:01:12.500
+`N` is a variable; nothing in the
+repository knows a node count.
+
+00:01:12.500 --> 00:01:16.250
+`platform-up` is instant because the lab
+is already up
+
+00:01:16.250 --> 00:01:18.333
+every step here is idempotent,
+
+00:01:18.333 --> 00:01:22.083
+so a second run costs nothing and changes
+nothing.
+
+00:01:22.083 --> 00:01:26.250
+Then `converge` applies the head node's
+configuration: the network, dnsmasq,
+
+00:01:26.250 --> 00:01:27.917
+NetBox, Warewulf, the controller.
+
+00:01:27.917 --> 00:01:32.083
+That is fifty seconds, and it is flat in
+`N`
+
+00:01:32.083 --> 00:01:36.667
+the check that no per-node work leaked
+into a per-run step.
+
+00:01:36.667 --> 00:01:39.583
+At fifty seconds the nodes power on.
+
+00:01:39.583 --> 00:01:40.833
+Watch the phases.
+
+00:01:40.833 --> 00:01:45.000
+`node-define` creates each disk and
+domain, `node-start` powers it on,
+
+00:01:45.000 --> 00:01:47.917
+then `firmware` power-on through UEFI and
+PXE.
+
+00:01:47.917 --> 00:01:52.500
+`dhcp-lease` is the first lease on the
+isolated segment this boot;
+
+00:01:52.500 --> 00:01:54.583
+`ipxe` fetches the boot script;
+
+00:01:54.583 --> 00:01:57.917
+`kernel` and `initramfs` pull the two
+early stages.
+
+00:01:57.917 --> 00:02:00.000
+`overlay` is the interesting one:
+
+00:02:00.000 --> 00:02:05.000
+the root filesystem arrives over the
+network and the node's identity is
+
+00:02:05.000 --> 00:02:09.167
+layered on top, so no two nodes share a
+filesystem.
+
+00:02:09.167 --> 00:02:12.917
+`login` is pivot to the real root and
+systemd.
+
+00:02:12.917 --> 00:02:17.917
+Each number is measured live from the
+node's serial console, per node,
+
+00:02:17.917 --> 00:02:22.083
+because firmware and iPXE print no
+timestamps of their own.
+
+00:02:22.083 --> 00:02:24.583
+Here is the result that matters.
+
+00:02:24.583 --> 00:02:27.917
+`platform-up` and `converge` stay flat as
+`N` grows.
+
+00:02:27.917 --> 00:02:30.417
+`node-define` is almost linear and cheap.
+
+00:02:30.417 --> 00:02:34.583
+The contended phases are the lease and the
+image fetch:
+
+00:02:34.583 --> 00:02:37.500
+one server answering every node at once.
+
+00:02:37.500 --> 00:02:42.500
+At four nodes, `overlay` grows from about
+eight seconds to about twelve.
+
+00:02:42.500 --> 00:02:47.500
+That bend is the scale argument, and it is
+a measured bend,
+
+00:02:47.500 --> 00:02:48.750
+not a guess.
+
+00:02:48.750 --> 00:02:51.667
+A login prompt is not a cluster.
+
+00:02:51.667 --> 00:02:53.750
+A fresh node arrives `staged`;
+
+00:02:53.750 --> 00:02:58.333
+it must pass its own burn-in before it can
+take work,
+
+00:02:58.333 --> 00:03:02.500
+and the head node not the node judges the
+result.
+
+00:03:02.500 --> 00:03:07.500
+On this run the gate is skipped in a tenth
+of a
+
+00:03:07.500 --> 00:03:07.917
+second:
+
+00:03:07.917 --> 00:03:12.917
+these two already passed on an earlier run
+and NetBox already calls
+
+00:03:12.917 --> 00:03:13.750
+them `active`.
+
+00:03:13.750 --> 00:03:18.333
+On the four-node run it takes a hundred
+and eighty-nine seconds,
+
+00:03:18.333 --> 00:03:23.333
+because burn-in and the promotion reboots
+are per node and cannot be
+
+00:03:23.333 --> 00:03:24.167
+parallelised away.
+
+00:03:24.167 --> 00:03:25.000
+Then Slurm.
+
+00:03:25.000 --> 00:03:30.000
+`slurmd` starts with `--conf-server`;
+there is no `slurm.conf` on a node, ever.
+
+00:03:30.000 --> 00:03:35.000
+Both nodes register and the job array runs
+one task per node,
+
+00:03:35.000 --> 00:03:36.667
+all `COMPLETED`, exit zero.
+
+00:03:36.667 --> 00:03:40.417
+That is the finish line: the machines took
+work.
+
+00:03:40.417 --> 00:03:43.750
+Ninety-five seconds of wall clock for this
+run,
+
+00:03:43.750 --> 00:03:46.250
+because the gate was already satisfied.
+
+00:03:46.250 --> 00:03:49.167
+Now the same code at four nodes.
+
+00:03:49.167 --> 00:03:52.917
+This table is a reprint of a stored run,
+
+00:03:52.917 --> 00:03:57.500
+so it is the real measurements, not a
+second live run.
+
+00:03:57.500 --> 00:04:00.000
+`converge` is fifty seconds — flat.
+
+00:04:00.000 --> 00:04:03.750
+`nodes-up` is thirty-four and a half —
+slightly up.
+
+00:04:03.750 --> 00:04:07.917
+The gate is a hundred and eighty-nine
+linear in `N`,
+
+00:04:07.917 --> 00:04:10.000
+because burn-in is per node.
+
+00:04:10.000 --> 00:04:12.500
+The job array is four seconds.
+
+00:04:12.500 --> 00:04:17.083
+Wall clock: two hundred and eighty-six
+seconds, four minutes and forty-six,
+
+00:04:17.083 --> 00:04:18.333
+for four nodes.
+
+00:04:18.333 --> 00:04:20.417
+One command, no manual step.
+
+00:04:20.417 --> 00:04:24.167
+Three things it does not prove, stated on
+purpose.
+
+00:04:24.167 --> 00:04:29.167
+There is no InfiniBand hardware; the RDMA
+numbers are Soft-RoCE over Ethernet,
+
+00:04:29.167 --> 00:04:32.917
+a real verbs data path on an unreal
+fabric.
+
+00:04:32.917 --> 00:04:37.917
+There is no real BMC; Redfish power and
+boot order are real,
+
+00:04:37.917 --> 00:04:40.000
+vendor BIOS attributes are not.
+
+00:04:40.000 --> 00:04:42.917
+And nothing above four nodes is observed;
+
+00:04:42.917 --> 00:04:47.083
+the hundred-node claim is arithmetic over
+a measured per-node cost,
+
+00:04:47.083 --> 00:04:49.583
+and it is labelled that way.
+
+00:04:49.583 --> 00:04:53.333
+The pipeline is code, every phase is a
+number,
+
+00:04:53.333 --> 00:04:55.833
+and nothing knows the node count.
+
+00:04:55.833 --> 00:04:57.500
+That is the point.
+

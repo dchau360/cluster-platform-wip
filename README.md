@@ -24,9 +24,11 @@ replay the real thing without downloading a video:
 - [`docs/demo/timings-20261013T000455Z-686422.cast`](docs/demo/timings-20261013T000455Z-686422.cast)
   — the stored `N=4` timing table, reprinted.
 - [`docs/demo/narration.md`](docs/demo/narration.md) — the five-minute
-  narration script, timed to the cast.
+  narration, with closed captions in
+  [`narration.srt`](docs/demo/narration.srt) and
+  [`narration.vtt`](docs/demo/narration.vtt).
 
-<!-- narrated video: replace this comment with a link once the voice-over is uploaded -->
+There is no narrated video; the captions are the narration.
 
 ## The problem this solves
 
