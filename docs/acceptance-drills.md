@@ -15,6 +15,7 @@ ran on.
 | Rolling image update, one node at a time | `make rolling-update TAG=sha-<new>` | jobs keep completing while nodes are reimaged |
 | `deployed`-ref rollback | `make promote SHA=<previous>` | every node converges on the commit the ref names |
 | The burn-in gate holds a failed node | `make burnin-gate` | a degraded node is set `failed` and never joins Slurm |
+| An alert fires and reaches a receiver | NodeDown and StalePull drills | Prometheus fired, the local webhook recorded it, and it resolved |
 | Cold-start recovery after a WSL restart | `scripts/windows/drill-cold-start.ps1` | a new boot id, then the lab back to Slurm-ready |
 
 `make acceptance` runs everything that can be driven from inside the lab, in
@@ -368,6 +369,48 @@ The gate read the node's own posted measurement, judged it against the floor,
 set the device `failed`, and `slurm_compute` kept `slurmd` stopped so the node
 never joined Slurm. Removing the throttle and re-burning set it `active`. The
 SRE-7 run recorded the same result for the same reason.
+
+## Alert drills
+
+An alert rule that fires into a void is a dashboard. The drills below prove
+that a rule produces a firing notification, that the notification reaches the
+receiver, and that it resolves. The receiver is the lab webhook
+(`cluster-alert-webhook`), the local stand-in for PagerDuty or Slack; the swap
+is a receiver block in `alertmanager.yml`
+([`operations.md`](operations.md#alerting-and-runbooks)).
+
+**Recorded on 2026-10-13**, against the merged alerting branch (tested head
+`d05d1df`) with four nodes up.
+
+### NodeDown
+
+```
+# cn04 healthy, up{job="node",hostname="cn04"} == 1
+virsh destroy cn04
+# 22:20:07Z  Prometheus reports NodeDown firing for cn04
+# 22:20:07Z  cluster-alert-webhook journal records the firing notification
+virsh start cn04
+# 22:25:08Z  cluster-alert-webhook journal records the resolved notification
+```
+
+### StalePull
+
+```
+# 22:25:08Z  rack-a-u01 last_converged_at aged through the NetBox API
+#            (original 2026-10-13T22:19:36Z)
+#            Prometheus reports StalePull firing for rack-a-u01
+#            cluster-alert-webhook journal records the firing notification
+# 22:28:39Z  original NetBox timestamp restored
+#            cluster-alert-webhook journal records the resolved notification
+```
+
+The drill ran in one continuous WSL session, because the lab's VMs and
+containers stop when a remote session exits. An earlier attempt exposed a
+port collision between Alertmanager's default cluster listener on 9094 and
+the webhook; the merged branch moves the webhook to 9095 and restarts it
+before Alertmanager on migration. The same run passed `make demo N=4`: four
+nodes joined Slurm and job array 128 completed four tasks `0:0`, one per
+node.
 
 ## Cold-start recovery after a WSL restart
 

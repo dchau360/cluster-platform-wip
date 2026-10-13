@@ -285,8 +285,15 @@ reader finds is a credibility failure.
   measured per-node cost**, not an observation, and I label it that way
   everywhere it appears. ([`scale-analysis.md`](scale-analysis.md))
 
+Those three are the ones that matter to the argument. The complete list of
+gaps between this lab and a production cluster — each with the gap, why it
+matters, the fix, a rough effort and whether it is built, designed or not
+started — is [`production-readiness.md`](production-readiness.md).
+
 ## Read next
 
+* [`production-readiness.md`](production-readiness.md) — every gap between
+  this lab and production, its fix, its cost and the order to close them in.
 * [`tradeoffs.md`](tradeoffs.md) — the three decisions, each with the option I
   did not take and what it is genuinely better at.
 * [`architecture.md`](architecture.md) — the diagram, with every box mapped to

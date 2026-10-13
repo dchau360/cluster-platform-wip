@@ -104,6 +104,10 @@ gap the reader finds is a credibility failure.
   81, not with throughput — is in
   [`docs/scale-analysis.md`](docs/scale-analysis.md).
 
+The full gap list — what is **built**, what is designed and what has not
+started, with the fix and the rough cost for each — is
+[`docs/production-readiness.md`](docs/production-readiness.md).
+
 ## How it works
 
 Every box is a real path in this repository or in `cluster-images-wip`. If a
@@ -190,10 +194,14 @@ In the order a stranger should read them:
 5. [`docs/scale-analysis.md`](docs/scale-analysis.md) — four named failure
    modes at 100 nodes, labelled measured or projected, and the order to fix
    them in.
-6. [`docs/node-self-configuration.md`](docs/node-self-configuration.md) — the
+6. [`docs/production-readiness.md`](docs/production-readiness.md) — every gap
+   between this lab and production, with its fix, rough effort, status and the
+   order to close them in. What is built links to its merged pull request and
+   its drill; nothing claims to be built that is not.
+7. [`docs/node-self-configuration.md`](docs/node-self-configuration.md) — the
    pull design, the four jobs a node cannot do for itself, and the drills that
    tested them.
-7. [`docs/acceptance-drills.md`](docs/acceptance-drills.md) — every drill with
+8. [`docs/acceptance-drills.md`](docs/acceptance-drills.md) — every drill with
    its console output.
 
 Also: [`docs/operations.md`](docs/operations.md),
@@ -293,6 +301,7 @@ docs/
   architecture.md             the diagrams, and how the pieces fit
   measurements.md             the 1-to-N curve
   scale-analysis.md           where it breaks at 100 nodes
+  production-readiness.md     every gap between this lab and production
   acceptance-drills.md        every drill, with its output
   node-self-configuration.md  the pull design and the four pushed jobs
   network-isolation.md        the isolation design and how it is proven
