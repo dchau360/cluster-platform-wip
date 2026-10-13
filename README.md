@@ -12,6 +12,22 @@ command runs at any node count, because nothing in this repository knows one.
 make demo N=4     # powered-off guests -> a Slurm cluster that has taken work
 ```
 
+## Watch the demo
+
+The live two-node run is committed as an asciinema cast, so a reader can
+replay the real thing without downloading a video:
+
+- [`docs/demo/make-demo-n2.cast`](docs/demo/make-demo-n2.cast) — the live
+  `make demo N=2` (1:35). Read it as
+  [`make-demo-n2.txt`](docs/demo/make-demo-n2.txt) if you would rather not
+  install a player.
+- [`docs/demo/timings-20261013T000455Z-686422.cast`](docs/demo/timings-20261013T000455Z-686422.cast)
+  — the stored `N=4` timing table, reprinted.
+- [`docs/demo/narration.md`](docs/demo/narration.md) — the five-minute
+  narration script, timed to the cast.
+
+<!-- narrated video: replace this comment with a link once the voice-over is uploaded -->
+
 ## The problem this solves
 
 Between a powered-off server and a compute node running someone's job there
