@@ -28,6 +28,7 @@
 
 # The password exists only on this host. It is generated here, once, and read
 # back on every run; nothing in git or in the play's variables holds it.
+# 0700, as the netbox role makes it: two modes would flip on every run.
 - name: Create the head node's secret directory
   become: true
   ansible.builtin.file:
@@ -35,7 +36,7 @@
     state: directory
     owner: root
     group: root
-    mode: "0755"
+    mode: "0700"
 
 - name: Generate the accounting database password
   become: true
