@@ -196,7 +196,7 @@ asciinema rec \
   --cols 100 --rows 34 \
   --title "$title" \
   --command "bash $HERE/lib/demo-cast-driver.sh $mode $arg" \
-  "$raw"
+  "$raw" </dev/null
 
 # No --idle-time-limit: the cast replays at the pace of the real run, so the
 # narration script can be keyed to it and the silences are the silences an
