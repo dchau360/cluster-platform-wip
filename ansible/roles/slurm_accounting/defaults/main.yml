@@ -16,6 +16,8 @@ slurm_accounting_conf: /etc/slurm/slurmdbd.conf
 slurm_accounting_client_conf: /etc/slurm/accounting-client.conf
 slurm_accounting_log_dir: /var/log/slurm
 slurm_accounting_port: "{{ lab_slurmdbd_port }}"
+# Seconds slurmdbd's start job may take to begin listening before it fails.
+slurm_accounting_listen_timeout: 60
 
 # InnoDB settings SchedMD's accounting guide asks for. The buffer pool is
 # sized for a lab; a production head node gives it most of its spare memory.

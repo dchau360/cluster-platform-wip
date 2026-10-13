@@ -10,4 +10,4 @@ RestartSec=5
 # Type=simple counts as started the moment the process exists. Hold the start
 # job until slurmdbd is listening, so `After=slurmdbd.service` on slurmctld
 # means "after slurmdbd can take a connection", not "after it was forked".
-ExecStartPost=/bin/sh -c 'for i in $(seq 60); do ss -Hltn "sport = :{{ slurm_accounting_port }}" | grep -q . && exit 0; sleep 1; done; exit 1'
+ExecStartPost=/usr/bin/timeout {{ slurm_accounting_listen_timeout }} /bin/sh -c 'until ss -Hltn "sport = :{{ slurm_accounting_port }}" | grep -q .; do sleep 1; done'

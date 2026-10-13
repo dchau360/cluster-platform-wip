@@ -180,7 +180,7 @@
   ansible.builtin.wait_for:
     host: 127.0.0.1
     port: "{{ slurm_accounting_port | int }}"
-    timeout: 60
+    timeout: "{{ slurm_accounting_listen_timeout | int }}"
 
 - name: Render the client configuration sacctmgr uses here
   become: true
