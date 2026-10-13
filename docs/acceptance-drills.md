@@ -328,8 +328,6 @@ NetBox still hold the swapped one, and the node will not boot until the
 Warewulf hwaddr is restored to match. It is the last drill in
 `make acceptance` for that reason.
 
-<!-- MEASURED-BURNIN -->
-
 ### The burn-in gate holds a deliberately-failed node
 
 The gate is only meaningful if it fails something. The way to make it fail
@@ -337,32 +335,74 @@ something honestly is to degrade the node from outside it, so the node's own
 measurement is genuinely bad:
 
 ```sh
-sudo virsh blkdeviotune cn02 vda --write-bytes-sec 4194304 --live
-# re-stage cn02 and let its own pull timer re-burn under the throttle
+sudo virsh blkdeviotune cn02 vda --write-bytes-sec 4194304 --config --live
+bash scripts/redfish.sh power cn02 cycle   # boot pull re-burns under throttle
 make burnin-gate
-# cn02 -> failed, slurmd stays stopped; remove the throttle, re-stage, re-burn
 ```
 
-The `--live` throttle must be applied to the running domain and the node
-re-staged *without* a rebuild: `make nodes-down` undefines the domain, and
-`nodes-up` redefines it from the harness XML, which drops both the live and
-the persistent throttle. Letting the node's own `cluster-pull.timer` run the
-burn-in is what actually keeps the throttle in place. (This corrects the
-procedure that was written before the drill was run.)
+The throttle must be set `--config` as well as `--live`, and the node is
+power-cycled rather than rebuilt: `make nodes-down` undefines the domain and
+`nodes-up` redefines it from the harness XML, which drops any throttle. (The
+procedure written before the drill used only `--live` and then a rebuild,
+which would not have held the node down at all; this is the corrected one.)
 
-In the SRE-7 run this drill was carried out and recorded: cn02's disk
-throttled to 4 MiB/s was judged `failed` (`disk write_mib_per_second 4.0 <
-20.0`) while cn01 was set `active`; the throttle was then removed, cn02
-re-staged, re-burned at 1299.5 MiB/s, and the gate set it `active`.
+**Recorded on 2026-10-13**, node image `sha-baa648ba99c8`:
 
-**The SRE-8 re-run is pending.** The drill was started against the current
-image, cn02 re-staged under a live throttle, and the lab host stopped
-answering partway through; it is recorded here as pending a working lab, not
-as passed.
+```
+$ make burnin-gate          # cn02's disk throttled to 4 MiB/s
+--- after gate: failed  -  fail 2026-10-13T00:55:37Z: disk write_mib_per_second 4.0 < 20.0 ---
+--- sinfo ---
+cn01           1  compute*        unk
+cn03           1  compute*        unk*
+cn04           1  compute*        unk*
+# cn02 is not a Slurm node: the gate holds it out
+
+$ # throttle removed, cn02 re-staged, re-burned
+--- gate again ---
+--- final: active  -  pass 2026-10-13T00:57:14Z ---
+```
+
+The gate read the node's own posted measurement, judged it against the floor,
+set the device `failed`, and `slurm_compute` kept `slurmd` stopped so the node
+never joined Slurm. Removing the throttle and re-burning set it `active`. The
+SRE-7 run recorded the same result for the same reason.
 
 ## Cold-start recovery after a WSL restart
 
-**Not yet run.** `wsl --shutdown` stops the whole distribution, including
-anything else in it, and the project's own rule is not to run it without Huy's
-explicit go-ahead. The command and what it measures are above; the result is
-recorded here once that go-ahead is given.
+**Run and recorded on 2026-10-13**, with the board's explicit go-ahead:
+
+```
+######## cold-start drill: before ########
+lab-net.service          enabled      PASS
+lab-dnsmasq.service      enabled      PASS
+######## wsl --shutdown ########
+######## cold-start drill: after ########
+[drill-cold-start] boot id before: 7cb0d038-01d9-4a0c-b401-83a44e2ac2de
+[drill-cold-start] boot id now   : e3233169-d748-4e50-9a90-b7f051871d75
+ok      the distribution restarted: a new boot id
+[drill-cold-start] systemd: degraded after 0s
+ok      lab-net.service came back by itself (0s)
+ok      lab-dnsmasq.service came back by itself (0s)
+RESULT: every lab unit is enabled at boot
+RESULT: changed=0 ok=36          # make up, idempotent: a clean cold start
+<< cold-start-nodes-up 30.459s
+<< cold-start-slurm 18.527s
+SLURM READY — 4 node(s) joined and a job array ran on every one of them
+COLD START OK — the distribution restarted and the lab came back to Slurm-ready
+```
+
+The boot id is the evidence: it changed, so the distribution genuinely
+restarted. Everything after it is what came back with no help. `make up`
+reported `changed=0 ok=36`, so the cold start needed no repair; the four nodes
+powered on and `slurm-ready` passed in 18.5s.
+
+**The drill caught a real defect, which is the reason to keep it.** The first
+run failed at `slurm-ready`: all four nodes booted and reached a login prompt,
+but every one reported `Not responding` and their pull runs died with
+`Failed to connect to 10.42.0.1 port 80: Connection refused`. `nginx` was
+enabled but failed at boot with `bind() to 10.42.0.1:80 failed (99: Cannot
+assign requested address)` — it raced `lab-net`, which assigns the
+provisioning address, so it never served the node git mirror and no node
+could pull `deployed`. The fix is a systemd drop-in ordering nginx after
+`lab-net`, and `make cold-start-check` now requires `nginx.service` to be
+enabled at boot.
