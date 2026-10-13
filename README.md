@@ -194,7 +194,8 @@ In the order a stranger should read them:
 7. [`docs/acceptance-drills.md`](docs/acceptance-drills.md) — every drill with
    its console output.
 
-Also: [`docs/network-isolation.md`](docs/network-isolation.md),
+Also: [`docs/operations.md`](docs/operations.md),
+[`docs/network-isolation.md`](docs/network-isolation.md),
 [`docs/discovery.md`](docs/discovery.md),
 [`docs/redfish.md`](docs/redfish.md),
 [`docs/rdma-soft-roce.md`](docs/rdma-soft-roce.md),
@@ -216,7 +217,8 @@ make down                                 # stop the lab
 ```
 
 `make help` lists everything. [`docs/lab-host-setup.md`](docs/lab-host-setup.md)
-is what the host needs, and why.
+is what the host needs, and why. [`docs/operations.md`](docs/operations.md) is
+how to check the lab, open the NetBox inventory, and add or replace a machine.
 
 ## What is here
 
@@ -297,6 +299,7 @@ docs/
   rdma-soft-roce.md           the RDMA numbers, and what they are not
   ib-and-dhcp-option61.md     the InfiniBand code that has no hardware
   lab-host-setup.md           what the lab host needs, and why
+  operations.md               status, NetBox inventory, add or replace a node
 ```
 
 ## Design decisions worth knowing
