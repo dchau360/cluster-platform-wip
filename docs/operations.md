@@ -146,5 +146,57 @@ Each node's serial console is also written to `$LAB_VM_DIR/console/<node>.log`.
 | node_exporter | `<node>:9100` | the segment; scraped by Prometheus on the head node |
 | slurmctld / slurmd | `:6817` / `:6818` | the segment |
 
+## Alerting and runbooks
+
+Prometheus sends alerts to Alertmanager on the head node. Alertmanager's lab
+receiver posts to `cluster-alert-webhook`, which writes notifications and
+resolutions to the system journal without external credentials:
+
+```sh
+sudo journalctl -u cluster-alert-webhook -f
+curl -s http://127.0.0.1:9090/api/v1/alerts | jq
+curl -s http://127.0.0.1:9093/api/v2/alerts | jq
+```
+
+To use a real receiver, replace `lab-webhook` in the Ansible-owned
+`alertmanager.yml`. A PagerDuty receiver uses `pagerduty_configs` with a
+`routing_key` supplied from an external Ansible secret; Slack uses
+`slack_configs` with an externally supplied `api_url`. Never put either value
+in this public repository. Run `amtool check-config` before deploying.
+
+### StalePull
+
+This fires after a node's NetBox convergence timestamp is older than twice the
+configured `PULL_INTERVAL_SECONDS`, or immediately after its last pull reports
+failure (both conditions have a two-minute hold). Check `make
+convergence-status`, the node's `cluster-pull.service` journal, mirror reachability,
+and its NetBox convergence fields. Re-run the timer only after fixing the
+reported failed task.
+
+### BurnInFailed
+
+This fires when the head-node burn-in gate sets a device to `failed` in NetBox.
+Inspect its `burnin_results` and `burnin_verdict` custom fields and the node's
+burn-in journal. Fix or replace the failing component, return the node to
+`staged`, rerun burn-in, then run `make burnin-gate`; do not manually promote it.
+
+### NodeDown
+
+Confirm the VM or machine state, provisioning network, and `prometheus-node-exporter`
+service. For the lab drill, stop exactly one VM, watch the alert reach the
+webhook journal, restart it, and retain the firing and resolved entries.
+
+### SlurmctldDown
+
+Run `scontrol ping`, then inspect `slurmctld`, `munge`, and the controller log.
+Restore Munge first if authentication fails. The local Slurm exporter reports
+controller reachability even when `sinfo` cannot list nodes.
+
+### SlurmNodeUnavailable
+
+Compare `sinfo --Node --long` with the device's NetBox state and node journal.
+Resolve the root cause before `make resume NODES=<node>`; an intentional drain
+may be silenced in Alertmanager during its maintenance window.
+
 For the host itself and what it needs, see
 [`lab-host-setup.md`](lab-host-setup.md).

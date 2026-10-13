@@ -14,16 +14,45 @@
     group: root
     mode: "0755"
 
-- name: Render the convergence alert rules
+- name: Install the cluster alert rules
   become: true
-  ansible.builtin.template:
-    src: cluster-convergence.rules.yml.j2
+  ansible.builtin.copy:
+    src: cluster.rules.yml
     dest: /etc/prometheus/rules/cluster-convergence.yml
     owner: root
     group: root
     mode: "0644"
     validate: promtool check rules %s
   notify: Reload Prometheus
+
+- name: Install the Slurm metrics exporter
+  become: true
+  ansible.builtin.copy:
+    src: slurm_exporter.py
+    dest: /usr/local/sbin/cluster-slurm-exporter
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart Slurm exporter
+
+- name: Install the Slurm metrics exporter unit
+  become: true
+  ansible.builtin.copy:
+    src: cluster-slurm-exporter.service
+    dest: /etc/systemd/system/cluster-slurm-exporter.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Slurm exporter
+
+- name: Enable and start the Slurm metrics exporter
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.systemd_service:
+    name: cluster-slurm-exporter
+    enabled: true
+    state: started
+    daemon_reload: true
 
 - name: Render the Prometheus configuration
   become: true

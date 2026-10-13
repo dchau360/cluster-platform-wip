@@ -1,0 +1,16 @@
+[Unit]
+Description=Cluster Slurm Prometheus exporter
+After=network.target slurmctld.service
+
+[Service]
+ExecStart=/usr/local/sbin/cluster-slurm-exporter
+Restart=on-failure
+RestartSec=5
+User=slurm
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

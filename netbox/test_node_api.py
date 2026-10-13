@@ -171,6 +171,16 @@ class ObservabilityTest(unittest.TestCase):
         self.assertIn('cluster_node_convergence_success{device="rack-a-u01",hostname="cn01"} 1', text)
         self.assertIn("cluster_node_last_converged_timestamp_seconds{", text)
         self.assertIn('git_sha="abc1234"', text)
+        self.assertIn('cluster_node_burnin_failed{device="rack-a-u01",hostname="cn01"} 0', text)
+        self.assertIn("cluster_pull_interval_seconds 900", text)
+
+    def test_failed_netbox_status_exports_a_failed_burnin(self):
+        nb = FakeNetBox()
+        nb.devices[1]["status"] = {"value": "failed"}
+        text = api.render_metrics(api.fleet(nb, "compute"), 300)
+        self.assertIn("cluster_node_burnin_failed{", text)
+        self.assertIn("hostname=\"cn01\"} 1", text)
+        self.assertIn("cluster_pull_interval_seconds 300", text)
 
     def test_timestamps_are_utc_whatever_the_local_zone(self):
         saved = os.environ.get("TZ")

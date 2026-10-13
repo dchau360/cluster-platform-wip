@@ -5,3 +5,11 @@
   ansible.builtin.systemd_service:
     name: prometheus
     state: reloaded
+
+- name: Restart Slurm exporter
+  become: true
+  when: not ansible_check_mode
+  ansible.builtin.systemd_service:
+    name: cluster-slurm-exporter
+    state: restarted
+    daemon_reload: true

@@ -56,12 +56,10 @@ lab_git_mirror_url: "http://{{ lab_prov_gw }}/git/platform.git"
 # The ref nodes pull. Never `main`: promotion is moving this ref, and a
 # commit only reaches it after the CI check-mode run of local.yml passed.
 lab_deployed_ref: "{{ lookup('env', 'DEPLOYED_REF') | default('deployed', true) }}"
-lab_pull_interval: "{{ lookup('env', 'PULL_INTERVAL') | default('15min', true) }}"
+lab_pull_interval_seconds: "{{ lookup('env', 'PULL_INTERVAL_SECONDS') | default(900, true) | int }}"
+lab_pull_interval: "{{ lab_pull_interval_seconds }}s"
 lab_pull_splay: "{{ lookup('env', 'PULL_SPLAY') | default('5min', true) }}"
 lab_pull_timeout: "{{ lookup('env', 'PULL_TIMEOUT') | default('20min', true) }}"
-# A node whose last report is older than this is stale. Three missed timer
-# runs, so one slow mirror fetch is not an alert.
-lab_convergence_stale_seconds: "{{ lookup('env', 'CONVERGENCE_STALE_SECONDS') | default(3600, true) }}"
 lab_node_exporter_port: "{{ lookup('env', 'NODE_EXPORTER_PORT') | default(9100, true) }}"
 
 # Slurm. Site values only; node, topology and GRES values come from NetBox.

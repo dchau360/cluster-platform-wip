@@ -14,6 +14,7 @@ Environment=NODE_API_ROLE={{ node_api_role_slug }}
 Environment=NODE_API_CONTROLLER_ADDRESS={{ lab_prov_gw }}
 Environment=NODE_API_SLURMCTLD_PORT={{ lab_slurmctld_port }}
 Environment=NODE_API_NODE_EXPORTER_PORT={{ lab_node_exporter_port }}
+Environment=NODE_API_PULL_INTERVAL_SECONDS={{ node_api_pull_interval_seconds }}
 Environment=NODE_API_NETBOX_ENV={{ node_api_netbox_env }}
 ExecStart=/usr/bin/python3 /usr/local/sbin/cluster-node-api
 Restart=on-failure
