@@ -377,4 +377,4 @@ make verify        # isolation and idempotency, on the lab host
 
 ## Licence
 
-Not yet chosen. Treat as all rights reserved until it is.
+MIT — see [LICENSE](LICENSE).
