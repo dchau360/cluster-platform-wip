@@ -298,16 +298,14 @@ fi
 # ---------------------------------------------------------------------------
 section "check 5: only allowlisted IPv4 literals in tracked files"
 
-# Allowed: the three fixed, repo-defined lab segments; loopback and wildcard
+# Allowed: the three fixed, repo-defined /22 lab segments; loopback and wildcard
 # addresses; common netmasks; and the three RFC 5737 documentation ranges.
 ip_allowed() {
   case "$1" in
-    10.41.0.*)                                 return 0 ;;  # BMC lab segment
-    10.42.0.*)                                 return 0 ;;  # provisioning segment
-    10.43.0.*)                                 return 0 ;;  # data lab segment
+    10.4[0-9].*|10.50.*)                       return 0 ;;  # repo-defined lab segments
     127.0.0.1)                                 return 0 ;;
     0.0.0.0)                                   return 0 ;;
-    255.255.255.0|255.255.255.255|255.255.0.0) return 0 ;;
+    255.255.252.0|255.255.255.0|255.255.255.255|255.255.0.0) return 0 ;;
     192.0.2.*)                                 return 0 ;;  # RFC 5737 TEST-NET-1
     198.51.100.*)                              return 0 ;;  # RFC 5737 TEST-NET-2
     203.0.113.*)                               return 0 ;;  # RFC 5737 TEST-NET-3

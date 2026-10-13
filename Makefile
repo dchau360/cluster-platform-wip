@@ -191,8 +191,8 @@ secrets: ## Run gitleaks over the worktree and the full history
 check-node-roles: ## Fail if a node-local role reaches another host
 	@$(RUN) $(S)/check-node-roles-are-local.sh
 
-test-python: ## Unit tests: NetBox seeding, renderers, node API, burn-in gate
-	@cd netbox && python3 -m unittest -q test_ib_guid test_render_dnsmasq test_render_slurm test_node_api test_burnin_gate
+test-python: ## Unit tests: address plan, NetBox renderers, node API, burn-in gate
+	@cd netbox && python3 -m unittest -q test_address_plan test_ib_guid test_render_dnsmasq test_render_slurm test_node_api test_burnin_gate
 
 lint-yaml: ## yamllint
 	$(call need,yamllint,Install step is in docs/lab-host-setup.md.)

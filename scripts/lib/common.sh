@@ -75,6 +75,13 @@ lab_load_env() {
     export "$key=${caller_env[$key]}"
   done
 
+  # NetBox's declarative definition owns the address plan. Render it after
+  # local.env so a stale copied example cannot silently restore the old /24.
+  local address_plan
+  address_plan="$(python3 "$REPO_ROOT/netbox/address_plan.py" shell-env)" \
+    || die "could not render NetBox address plan"
+  eval "$address_plan"
+
   # `N` on the make command line always wins. Nothing in this repo may
   # assume a node count.
   if [[ -n "${N:-}" ]]; then
@@ -136,7 +143,7 @@ node_mac() {
 # a variable so the formula has one definition; the Warewulf role and
 # netbox/seed.py read the same variable, so the address a node holds and the
 # address this function computes cannot diverge.
-node_ip() { printf '10.42.0.%d' $(( ${PROV_NODE_IP_OFFSET:-19} + $1 )); }
+node_ip() { python3 "$REPO_ROOT/netbox/address_plan.py" node-ip "$1"; }
 
 lab_node_indexes() { seq 1 "${NODE_COUNT}"; }
 

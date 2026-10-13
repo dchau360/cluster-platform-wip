@@ -30,9 +30,10 @@ burn-in acceptance path is linear in N and separate: 95.5 s for one node,
 126.2 s for two, 189.2 s for four. Everything below is what that slope means
 at a hundred.
 
-## The first wall is not performance. It is the address plan.
+## The first wall was the address plan — fixed, with a test
 
-Before any throughput argument, the configuration stops working:
+The measured configuration used to stop working before any throughput
+argument:
 
 | | Value | Consequence at 100 nodes |
 | --- | --- | --- |
@@ -40,12 +41,25 @@ Before any throughput argument, the configuration stops working:
 | dnsmasq dynamic pool | `dhcp-range=10.42.0.100,10.42.0.199` | the reservation for node 81 is **inside the dynamic pool** |
 | Segment | `10.42.0.0/24` | about 244 usable addresses, so ~100 nodes plus BMCs is already most of it |
 
-So the pipeline does not slow down at 100 nodes — at node 81 it starts
+So the old pipeline did not slow down at 100 nodes — at node 81 it started
 handing a dynamically-allocated address to a node that is supposed to hold a
 reservation, and the failure looks like an intermittently misnamed node
-rather than like an exhausted plan. This is a one-line fix (`/22`, and a
-dynamic pool that cannot overlap the reservations), and it is a fix nobody
-makes until they have counted. Counting is the point of this document.
+rather than like an exhausted plan.
+
+The production-ready plan fixes that wall in `netbox/definition.yml`. BMC,
+provisioning and data each have a `/22`; node allocations start at host offset
+19 and span the first three `/24`s, while dnsmasq's dynamic/discovery pool is
+`10.44.3.20-10.44.3.250`, the final `/24` of the provisioning prefix. The
+seeder records both the static allocation ranges and the separate dynamic
+range in NetBox. The harness renders its prefix, gateway, netmask and dnsmasq
+pool from that same definition, and Warewulf consumes each seeded node address
+from NetBox rather than reproducing the formula.
+
+`netbox/test_address_plan.py` allocates BMC, provisioning and data addresses
+for N=100 and N=500 and asserts that every address stays inside its prefix and
+outside the dynamic pool. Its regression fixture also reconstructs the old
+plan and proves node 81 lands inside `10.42.0.100-10.42.0.199`. The first wall
+is therefore fixed and guarded in CI, not merely moved in this document.
 
 ## What is flat in N, and why that is the interesting part
 

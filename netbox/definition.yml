@@ -13,18 +13,22 @@ device_type:
   model: compute-node
   slug: compute-node
 prefixes:
-  bmc: 10.41.0.0/24
-  provisioning: 10.42.0.0/24
-  data: 10.43.0.0/24
+  bmc: 10.40.0.0/22
+  provisioning: 10.44.0.0/22
+  data: 10.48.0.0/22
 pools:
-  bmc: 10.41.0.20-10.41.0.250
-  # Starts at the first node address from lab/local.env.example
-  # (PROV_NODE_IP_OFFSET=19 -> node 1 is 10.42.0.20), so the address a node
-  # holds is inside the pool that describes where node addresses come from.
-  # The discovery payload registers the address it actually holds against
-  # this range.
-  provisioning: 10.42.0.20-10.42.0.250
-  data: 10.43.0.20-10.43.0.250
+  bmc: 10.40.0.20-10.40.2.254
+  provisioning: 10.44.0.20-10.44.2.254
+  data: 10.48.0.20-10.48.2.254
+
+# One source for every provisioning-network consumer. Static node addresses
+# grow upward from offset 19; unrecognised/discovery clients live in the last
+# /24. The two sets cannot meet before the /22 itself is exhausted.
+address_plan:
+  provisioning_gateway_offset: 1
+  node_offset: 19
+  dynamic_pool: 10.44.3.20-10.44.3.250
+  dynamic_lease: 10m
 custom_fields:
   - {name: last_git_sha, type: text}
   - {name: image_tag, type: text}

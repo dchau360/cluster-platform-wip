@@ -171,20 +171,11 @@ warewulf_server_runtime_overlays:
 # pull.env. See tasks/pull_overlay.yml.
 warewulf_server_pull_overlay: cluster-pull
 
-# Node addressing, mirroring scripts/lib/common.sh. Values, not formulas:
-# the formula stays in one place and these are derived from the same
-# environment, so a change to PROV_MAC_OUI or the IP offset lands in both.
+# Node addressing. NetBox supplies the address; only the synthetic MAC formula
+# is local because it is the key used to find that reservation.
 warewulf_server_mac_oui: "{{ lookup('env', 'PROV_MAC_OUI') | default('52:54:00', true) }}"
-warewulf_server_node_ip_offset: "{{ lab_node_ip_offset | default(19) }}"
 warewulf_server_node_netdev: eth0
 warewulf_server_node_netname: default
-
-# The address prefix a node's host part is appended to. `warewulf_server_network`
-# is a network address (10.42.0.0), so appending `.N` to it produced
-# 10.42.0.0.N, which `wwctl node add` rejects as an invalid IP. Drop the
-# trailing zero octet once and append to the result.
-warewulf_server_node_ip_prefix: >-
-  {{ warewulf_server_network | regex_replace('\.[0-9]+$', '') }}
 
 # Warewulf keeps its own DHCP/TFTP service names in the config. The lab's
 # dnsmasq is owned by the harness (scripts/net-up.sh) and is the only DHCP
