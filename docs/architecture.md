@@ -1,50 +1,120 @@
 # Architecture
 
+Every box below is a real path in this repository or in
+[`cluster-images-wip`](https://github.com/dchau360/cluster-images-wip). If a
+box has no path, it is not part of the system.
+
 ## The shape of it
 
-```text
-                    Windows host
-  +---------------------------------------------------------+
-  |  WSL2, Ubuntu, systemd                                  |
-  |                                                         |
-  |   eth0  ---- NAT ----> home LAN        br-prov          |
-  |   (never carries DHCP or TFTP)         (no uplink)      |
-  |                                           |             |
-  |   lab-dnsmasq.service  --- bound to ------+             |
-  |     DHCP, DNS, TFTP                       |             |
-  |                                           |             |
-  |   libvirtd                                |             |
-  |     node 1 .. node N  (OVMF, q35) --------+             |
-  |                                                         |
-  |   warewulf      (later)   node images, per-node overlays|
-  |   netbox        (later)   source of truth               |
-  |   slurm         (later)   controller on the host        |
-  +---------------------------------------------------------+
+```mermaid
+flowchart LR
+  OP["operator<br/>make up, make demo N=n, make acceptance<br/>Makefile"]
+
+  subgraph HEAD["head node — one workstation, WSL2 Ubuntu, systemd"]
+    direction TB
+    ANS["ansible/site.yml<br/>head-node convergence, push<br/>make converge"]
+    NET["lab-net.service<br/>br-prov, a bridge with no uplink<br/>systemd/lab-net.service.in, scripts/net-up.sh"]
+    DNS["lab-dnsmasq.service<br/>DHCP, TFTP and DNS, bound to br-prov only<br/>ansible/roles/dnsmasq/"]
+    NB["NetBox — the source of truth<br/>ansible/roles/netbox/, netbox/seed.py"]
+    WW["warewulfd<br/>node image and per-node overlays over HTTP<br/>ansible/roles/warewulf_server/"]
+    API["cluster-node-api<br/>the only holder of a NetBox token<br/>ansible/roles/node_api/"]
+    MIR["git mirror, publishes the deployed ref only<br/>ansible/roles/git_mirror/"]
+    SCTL["slurmctld, configless<br/>ansible/roles/slurm_controller/<br/>ansible/roles/slurm_config/"]
+    RF["sushy-emulator — Redfish power and boot order<br/>ansible/roles/sushy_emulator/, scripts/redfish.sh"]
+    PROM["Prometheus — convergence and staleness alerts<br/>ansible/roles/prometheus/"]
+  end
+
+  subgraph NODE["compute node, N of them — UEFI q35 guest, no inbound SSH, no credential"]
+    direction TB
+    BOOT["UEFI PXE, iPXE, two-stage dracut<br/>scripts/nodes-up.sh"]
+    PULL["cluster-pull.service and .timer<br/>ansible-pull -C deployed ansible/local.yml<br/>ansible/roles/warewulf_server/files/cluster-pull/"]
+    ROLES["node-local roles only<br/>node_facts, network_from_netbox, munge, node_exporter,<br/>rdma_soft_roce, burnin, slurm_compute, convergence_report<br/>ansible/roles/"]
+    SLURMD["slurmd --conf-server<br/>no slurm.conf on the node, ever<br/>ansible/roles/slurm_compute/"]
+  end
+
+  GHA["GitHub Actions builds the node images<br/>cluster-images-wip/.github/workflows/images.yml"]
+  GHCR["ghcr.io/dchau360/cluster-images-wip<br/>public packages, one tag per commit"]
+  LAN["home LAN, reached only by WSL's eth0 NAT<br/>carries no DHCP, no TFTP and no image<br/>scripts/verify-isolation.sh"]
+
+  OP --> ANS
+  ANS --> NET
+  ANS --> DNS
+  ANS --> NB
+  ANS --> WW
+  ANS --> SCTL
+  ANS --> RF
+  NB -->|"reservations rendered from it"| DNS
+  NB -->|"slurm.conf and topology.conf rendered from it"| SCTL
+  NB --- API
+  GHA -->|"push on main"| GHCR
+  GHCR -->|"wwctl image import docker://..., no credential"| WW
+  RF -->|"power cycle, persistent boot order"| BOOT
+  BOOT -->|"DHCP, TFTP"| DNS
+  BOOT -->|"image and overlays over HTTP"| WW
+  BOOT --> PULL
+  PULL -->|"git clone, pinned ref"| MIR
+  PULL --> ROLES
+  ROLES -->|"GET /v1/self, POST convergence and burn-in"| API
+  ROLES --> SLURMD
+  SLURMD -->|"fetches its configuration over Slurm RPC"| SCTL
+  PROM -->|"scrapes"| API
+  NET x-- "no route, by construction" --x LAN
 ```
 
 Two networks, and they never meet. `eth0` is WSL's NAT interface; it
 reaches the home LAN and carries no lab service. `br-prov` carries every
-lab service and reaches nothing. See
-[`network-isolation.md`](network-isolation.md).
+lab service and reaches nothing. `make verify-isolation` proves it from
+inside the segment, from a network namespace configured the way a node would
+be. See [`network-isolation.md`](network-isolation.md).
+
+Three edges in that diagram are the whole design, and each is argued
+elsewhere:
+
+* **GHCR to warewulfd carries no credential.** The packages are public on
+  purpose, because a provisioning host that needs a registry token is a
+  provisioning host that cannot be rebuilt from nothing. The secret boundary
+  that makes a public image safe is in `cluster-images-wip`'s
+  [`docs/overlays.md`](https://github.com/dchau360/cluster-images-wip/blob/main/docs/overlays.md).
+* **The node pulls; the platform pushes only what a node cannot do for
+  itself.** Four jobs stay on the head node. See
+  [`node-self-configuration.md`](node-self-configuration.md) and
+  [`tradeoffs.md`](tradeoffs.md#3-pull-versus-push).
+* **Nothing on a node holds a credential.** `cluster-node-api` holds the one
+  NetBox token and offers a node three calls, all about itself, none of which
+  can write a status or a name.
 
 ## Boot path for one node
 
-| Phase | Who serves it | Status |
-| --- | --- | --- |
-| Power on, UEFI firmware | OVMF via libvirt | working |
-| DHCP discover, offer, lease | `lab-dnsmasq.service` | working |
-| TFTP request for the iPXE boot file | `lab-dnsmasq.service` | working |
-| iPXE script, kernel and initramfs | `warewulfd` over HTTP on `br-prov` | working |
-| Image fetch, overlay apply, pivot | Warewulf, two-stage `dracut` | working |
-| Per-node overlay: SSH host keys, Munge key | Warewulf runtime overlay | working |
-| Discovery: scrape and self-register in NetBox | `cluster-discovery` runtime overlay + `discovery` image | working |
-| Slurm compute joins the controller | Slurm task | stubbed |
+```mermaid
+flowchart TB
+  S1["power on or power cycle<br/>scripts/redfish.sh, scripts/nodes-up.sh<br/>phases node-define, node-start"]
+  S2["UEFI firmware to the PXE boot manager<br/>OVMF via libvirt<br/>phase firmware — 5.6s at N=4"]
+  S3["DHCP discover, offer, lease on br-prov<br/>lab-dnsmasq.service<br/>phase dhcp-lease — 5.1 to 6.1s at N=4"]
+  S4["TFTP the iPXE binary, then the iPXE script<br/>dnsmasq, then warewulfd over HTTP<br/>phase ipxe — 5.9s at N=4"]
+  S5["kernel, then the wwinit initramfs<br/>warewulfd<br/>phases kernel, initramfs — 2.5 to 3.1s at N=4"]
+  S6["image, system overlay and runtime overlay<br/>fetched and applied by the dracut stage<br/>phase overlay — 11.2 to 11.9s at N=4"]
+  S7["pivot to the node root, systemd, login prompt<br/>phase login — 7.1 to 7.4s at N=4"]
+  S8["cluster-pull runs ansible-pull from the deployed ref<br/>facts from cluster-node-api, Munge key from the overlay"]
+  S9{"device status<br/>in NetBox?"}
+  S10["staged: run burn-in, post raw measurements<br/>ansible/roles/burnin/<br/>phase burnin-report — 61.4 to 67.3s per node, in parallel"]
+  S11["head node judges the measurements and sets the status<br/>make burnin-gate<br/>phase burnin-gate — 5.1 to 5.7s for the fleet"]
+  S12["power cycle the promoted node<br/>scripts/nodes-activate.sh<br/>phase node-activate — 28.5 to 30.5s per node"]
+  S13["active: start slurmd, fetch configuration over RPC<br/>ansible/roles/slurm_compute/<br/>phase slurm-join"]
+  S14["slurmctld has the node, a job array runs on it<br/>scripts/slurm-ready.sh<br/>phase job-array"]
 
-"Working" means observed end to end on the lab host: a q35/OVMF node
-PXE-boots, iPXE fetches its script from `http://10.42.0.1:9873`, loads the
-kernel and the `wwinit` initramfs, pivots into the provisioned image, and
-reaches a login prompt. The runtime overlay delivers the cluster Munge key
-and per-node SSH host keys; neither is in git or in an image layer.
+  S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> S8 --> S9
+  S9 -->|"staged"| S10 --> S11 --> S12 --> S2
+  S9 -->|"active"| S13 --> S14
+```
+
+Every node boots **twice** in a `make demo`, and that is not waste. The first
+boot arrives `staged`, which means burn-in: nobody can log in to a node to
+start `slurmd`, and a node that has not been judged must not join the
+cluster. The gate on the head node recomputes pass or fail from the raw
+numbers, sets the device `active`, and the promotion power-cycle is what puts
+`slurmd` up on the second boot. The durations above are the per-node figures
+measured at `N=4` on 2026-10-13; the full tables at `N=1`, `2` and `4` are in
+[`measurements.md`](measurements.md#results).
 
 Two things about the Warewulf half are worth recording because they are
 configuration, not code, and both cost time to find:
@@ -59,10 +129,11 @@ configuration, not code, and both cost time to find:
   `wwinit` dracut module. `cluster-images-wip` builds that in; without it
   the node stops at `Failed to mount /sysroot`.
 
-Each phase is a `phase_begin` / `phase_end` pair, per node. The phases
-above the line record today; the ones below record as they are built, into
-the same NDJSON stream. That is how the 1-to-N curve gets measured without
-anyone retrofitting instrumentation.
+Each phase is a `phase_begin` / `phase_end` pair, per node, written to
+NDJSON by `scripts/lib/timing.sh` and `scripts/lib/boot-phases.sh`. The
+instrumentation was written before most of the phases existed, which is why
+the 1-to-N curve exists at all — see
+[`measurements.md`](measurements.md#how-the-boot-phases-are-measured).
 
 ## Discovery
 
@@ -73,6 +144,11 @@ scrapes DMI, CPU, memory, NICs, disks and GPUs and writes its own NetBox
 device, interfaces and IPAM address. The NetBox endpoint and token arrive in
 the overlay at boot, never in an image or in git. See
 [`discovery.md`](discovery.md).
+
+Those discovered facts are not decoration: `CPUs`, `RealMemory` and
+`Gres=gpu:N` in the rendered `slurm.conf` come from the fields the discovery
+boot wrote. A device NetBox does not fully describe is an error that names
+the device and the field, never a default.
 
 ## The management plane
 
@@ -164,3 +240,8 @@ prints `RESULT: changed=N`, and `make verify-idempotent` fails if a second
 run changes anything. It is cheap, and it catches the class of bug where a
 step rewrites a file with a timestamp in it and quietly restarts a service
 on every run.
+
+Measured: a second `make converge` on a settled head node reports
+`ok=119 changed=0`, and a second node-side pull run reports
+`ok=38 changed=0 failed=0`
+([`node-self-configuration.md`](node-self-configuration.md#evidence)).
