@@ -11,15 +11,31 @@
   loop_control:
     label: "{{ item.name }}"
 
+# As root, then handed over: becoming an unprivileged user needs ACL or
+# setfacl support on the temp directory, which the lab host does not have.
 - name: Generate each job user's cluster key once
   become: true
-  become_user: "{{ item.name }}"
   ansible.builtin.command:
     cmd: ssh-keygen -q -t ed25519 -N "" -C "{{ item.name }}@cluster" -f /home/{{ item.name }}/.ssh/id_ed25519
     creates: "/home/{{ item.name }}/.ssh/id_ed25519"
   loop: "{{ operator_access_users }}"
   loop_control:
     label: "{{ item.name }}"
+
+- name: Give each job user its cluster key
+  become: true
+  ansible.builtin.file:
+    path: "/home/{{ item.0.name }}/.ssh/{{ item.1.file }}"
+    owner: "{{ item.0.name }}"
+    group: "{{ item.0.name }}"
+    mode: "{{ item.1.mode }}"
+  vars:
+    operator_access_key_files:
+      - {file: id_ed25519, mode: "0600"}
+      - {file: id_ed25519.pub, mode: "0644"}
+  loop: "{{ operator_access_users | product(operator_access_key_files) | list }}"
+  loop_control:
+    label: "{{ item.0.name }} {{ item.1.file }}"
 
 - name: Read each job user's cluster public key
   become: true
