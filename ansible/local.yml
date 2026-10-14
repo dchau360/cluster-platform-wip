@@ -4,7 +4,8 @@
 # Invoked by `ansible-pull` from the cluster-pull unit the cluster-pull
 # Warewulf overlay delivers: once immediately at boot, then on a splayed
 # timer. It pulls the pinned `deployed` ref from the head node's mirror, never
-# `main`. The node has no inbound SSH and holds no credential: it reads its own
+# `main`. Nothing logs in to configure it (sshd is on for operators only) and
+# it holds no credential: it reads its own
 # NetBox record and writes back its result through the head-node API, which
 # identifies it by its address on the isolated provisioning segment.
 #
@@ -54,6 +55,14 @@
         - name: Network, as NetBox describes it
           ansible.builtin.include_role:
             name: network_from_netbox
+
+        - name: Head-node shares, /home and /opt/software
+          ansible.builtin.include_role:
+            name: shared_storage
+
+        - name: Key-only sshd, so an operator can log in
+          ansible.builtin.include_role:
+            name: node_sshd
 
         - name: Munge, with the overlay-delivered cluster key
           ansible.builtin.include_role:

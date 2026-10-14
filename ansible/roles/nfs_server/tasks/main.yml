@@ -1,0 +1,32 @@
+---
+- name: Install the NFS server
+  become: true
+  ansible.builtin.package:
+    name: nfs-kernel-server
+    state: present
+
+- name: Create the shared software tree
+  become: true
+  ansible.builtin.file:
+    path: "{{ nfs_server_software_dir }}"
+    state: directory
+    owner: root
+    group: "{{ nfs_server_software_group }}"
+    mode: "2775"
+
+- name: Export the shares to the provisioning segment only
+  become: true
+  ansible.builtin.template:
+    src: cluster.exports.j2
+    dest: "{{ nfs_server_exports_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Re-export
+
+- name: Enable and start the NFS server
+  become: true
+  ansible.builtin.systemd:
+    name: nfs-server
+    enabled: true
+    state: started

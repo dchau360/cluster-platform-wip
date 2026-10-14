@@ -1,0 +1,15 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Head-node share {{ item.path }}
+After=network-online.target
+Wants=network-online.target
+
+[Mount]
+What={{ shared_storage_server }}:{{ item.path }}
+Where={{ item.path }}
+Type=nfs
+Options={{ item.options }}
+TimeoutSec=30
+
+[Install]
+WantedBy=remote-fs.target

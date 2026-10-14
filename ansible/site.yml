@@ -39,12 +39,15 @@
   # Order matters only where one role reads what another writes: the node API
   # and the Slurm renderer read NetBox; the controller needs the cluster Munge
   # key warewulf_server generates; slurmctld reports to slurmdbd, so
-  # accounting is up first; Prometheus scrapes the node API.
+  # accounting is up first; Prometheus scrapes the node API. operator_access
+  # writes /etc/hosts from the node addresses warewulf_server read from NetBox.
   roles:
     - netbox
     - dnsmasq
     - git_mirror
     - warewulf_server
+    - nfs_server
+    - operator_access
     - sushy_emulator
     - node_api
     - slurm_accounting

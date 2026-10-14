@@ -1,0 +1,19 @@
+---
+# The head node exports these (roles/nfs_server); every node mounts them from
+# the address it already reaches the Slurm controller on, so there is no
+# second source for "where is the head node".
+#
+#   /home          read-write. A job user's files, and their ~/.ssh, are the
+#                  same on the head node and every node.
+#   /opt/software  read-only. Install once on the head node, use everywhere.
+#                  Nodes have no route to the internet, so this, not a
+#                  package manager on the node, is how ad-hoc software
+#                  reaches them. System packages belong in the image.
+shared_storage_server: "{{ node_facts.controller.address }}"
+shared_storage_mounts:
+  - {path: /home, options: "rw,hard,nfsvers=4.2,_netdev,nofail"}
+  - {path: /opt/software, options: "ro,hard,nfsvers=4.2,_netdev,nofail"}
+shared_storage_mount_helper: /usr/sbin/mount.nfs
+# A container (CI, Molecule) has no NFS server to reach and cannot mount; the
+# units are still written so the run proves they render.
+shared_storage_activate: "{{ ansible_virtualization_type | default('') not in ['docker', 'container', 'podman'] }}"

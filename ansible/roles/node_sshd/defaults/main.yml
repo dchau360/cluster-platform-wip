@@ -1,0 +1,8 @@
+---
+# sshd and its host keys ship in compute-base, and Warewulf delivers the host
+# keys (ssh.host_keys) and root's authorized_keys (ssh.authorized_keys) at
+# boot. The image ships the service disabled; turning it on, key-only, is this
+# role's job, so whether a node accepts logins is decided in git like every
+# other piece of node state.
+node_sshd_service: sshd
+node_sshd_dropin: /etc/ssh/sshd_config.d/10-cluster.conf
