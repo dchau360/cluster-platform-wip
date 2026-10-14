@@ -23,6 +23,7 @@ N ?=
 export N
 
 .PHONY: help up down down-hard demo nodes-up nodes-down status timings \
+	ssh-config authorize-key \
         discover promote convergence-status drain resume reconfigure \
         rolling-update burnin-gate check-node-roles test-python \
         systemd-install verify verify-isolation verify-idempotent \
@@ -103,6 +104,12 @@ discover: ## Boot a node into the discovery image and verify its NetBox record. 
 
 promote: ## Move the deployed ref to a green commit. make promote SHA=<commit>
 	@$(RUN) $(S)/promote.sh
+
+ssh-config: ## Print the ~/.ssh/config block for your workstation (head node, nodes, UI tunnel)
+	@$(RUN) $(S)/ssh-config.sh
+
+authorize-key: ## Let a workstation key log in to the head node and every node. KEY='ssh-ed25519 ...'
+	@$(RUN) $(S)/authorize-key.sh
 
 convergence-status: ## Each node's last pull run from NetBox; non-zero if stale/failed
 	@$(RUN) $(S)/convergence-status.sh

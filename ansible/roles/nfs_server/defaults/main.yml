@@ -1,0 +1,13 @@
+---
+# What the head node shares with the provisioning segment, and nothing else.
+# The nodes' side is roles/shared_storage. root is squashed: root on a node
+# is not root on the head node's files.
+nfs_server_clients: "{{ lab_prov_network }}/{{ lab_prov_prefix }}"
+nfs_server_exports_file: /etc/exports.d/cluster.exports
+nfs_server_exports:
+  - {path: /home, options: "rw,sync,root_squash,no_subtree_check"}
+  - {path: /opt/software, options: "ro,sync,root_squash,no_subtree_check"}
+# /opt/software is written on the head node, by root or by a job user, and
+# read on every node.
+nfs_server_software_dir: /opt/software
+nfs_server_software_group: "{{ cluster_job_users[0].name }}"

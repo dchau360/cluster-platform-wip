@@ -1,0 +1,24 @@
+---
+- name: Render the key-only sshd policy
+  ansible.builtin.template:
+    src: 10-cluster.conf.j2
+    dest: "{{ node_sshd_dropin }}"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart sshd
+
+- name: Enable and start sshd
+  ansible.builtin.systemd:
+    name: "{{ node_sshd_service }}"
+    enabled: true
+    state: started
+
+# A drop-in cannot be validated on its own, so the whole configuration is
+# checked once sshd has generated or received its host keys, before the
+# restart the handler would do.
+- name: Check the sshd configuration parses
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    cmd: /usr/sbin/sshd -t
+  changed_when: false

@@ -4,6 +4,107 @@ The commands an operator actually runs, and where the consoles are. Run them
 on the **lab host** (inside WSL) unless a step says otherwise. `make help`
 lists every target.
 
+## Use the cluster from your workstation
+
+Two commands on the lab host set everything up, once:
+
+```sh
+make authorize-key KEY='ssh-ed25519 AAAA... you@laptop'   # your workstation's public key
+make -s ssh-config                                         # prints a ~/.ssh/config block
+```
+
+Append the printed block to `~/.ssh/config` on your workstation. It reaches
+the head node through the Windows box with `wsl -e nc`, so nothing on Windows
+is reconfigured and no WSL address that changes on restart is written down.
+Then, from the workstation:
+
+| You want to | Run |
+| --- | --- |
+| A shell on the head node | `ssh cluster` |
+| A root shell on a node | `ssh cn01` (jumps through the head node) |
+| NetBox, Prometheus, Alertmanager in a browser | `ssh -N cluster-tunnel`, then open `http://localhost:8000`, `:9090`, `:9093` |
+| Copy files in or out | `scp file cluster:` or `scp file cn01:/tmp/` |
+
+On the head node itself, `sudo ssh cn01` works, and so does `ssh cn01` as a
+job user (see below). Node names resolve on the head node from the same
+NetBox addresses Warewulf uses.
+
+### Log in to nodes
+
+Every node runs a key-only `sshd` (`roles/node_sshd`, through the pull path).
+Keys come from two places, and neither is in git:
+
+- **root**: the head node's `/root/.ssh/authorized_keys`, delivered to every
+  node by the Warewulf `ssh.authorized_keys` overlay. `make authorize-key` adds
+  to it and rebuilds the overlays.
+- **job users** (`hpc`): their own `~/.ssh/authorized_keys`. `/home` is shared,
+  and the head-node play gives each job user a cluster key that is already
+  authorized, so `hpc` can ssh between the head node and any node with no
+  setup, which is what MPI launchers need.
+
+Every node presents the same cluster host key, so a rebuilt node does not
+trigger a host-key warning.
+
+### Shared storage
+
+The head node exports two directories to the provisioning segment
+(`roles/nfs_server`), and every node mounts them (`roles/shared_storage`):
+
+| Path | On nodes | Use it for |
+| --- | --- | --- |
+| `/home` | read-write | job users' files, job output, their ssh keys |
+| `/opt/software` | read-only | software you install once and use everywhere |
+
+### Install software
+
+Nodes are stateless and have no route to the internet, so `dnf install` on a
+node has no repository to reach, and anything installed by hand disappears at
+the next reboot. There are two right places:
+
+1. **Applications and toolchains: `/opt/software` on the head node.**
+   Install there as `hpc` or root, and every node sees it at once. Binary
+   releases, Python virtual environments, conda environments and Spack all
+   work this way:
+   ```sh
+   ssh cluster
+   sudo -u hpc python3 -m venv /opt/software/venvs/sci
+   sudo -u hpc /opt/software/venvs/sci/bin/pip install numpy
+   sudo -u hpc srun -N4 /opt/software/venvs/sci/bin/python -c 'import numpy; print(numpy.__version__)'
+   ```
+   The head node is Ubuntu and the nodes are Rocky 9. Pure-Python packages
+   and static binaries do not care; anything that links against system
+   libraries should be built for Rocky 9, for example in a scratch copy of the
+   node image (below).
+2. **System packages, drivers, libraries every node needs: the image.** See
+   the next section. It is the only route that survives a reboot and is the
+   same on every node.
+
+### Images
+
+Images are built in GitHub, never edited on the server. Every merge to
+`cluster-images-wip` publishes an immutable `sha-<commit>` tag to GHCR.
+
+```sh
+sudo wwctl image list                            # what is imported
+sudo wwctl node list -a cn01 | grep -i image     # what a node runs
+```
+
+- **Add a package:** add it to `images/compute-base/packages.txt` (every node)
+  or `images/compute-slurm/packages.txt`, open a PR, merge. The tag is in the
+  Actions run summary.
+- **Roll it out:** `make rolling-update TAG=sha-<commit>`: drain, reboot onto
+  the new image, health-check and resume, one node at a time, stopping and
+  restoring the old image on a failure. `make rollback TAG=sha-<previous>`
+  goes back.
+- **A new image:** add `images/<name>/` with a `Containerfile` (usually
+  `FROM` compute-base) and a `packages.txt`. CI builds every directory under
+  `images/`. Import it with `sudo wwctl image import --build
+  docker://ghcr.io/<owner>/cluster-images-wip/<name>:sha-<commit> <name>` and
+  point a node at it with `sudo wwctl node set -y <node> --image <name>`.
+- **Experiments only:** `sudo wwctl image copy compute-slurm scratch && sudo
+  wwctl image shell scratch`, then `sudo wwctl image build scratch`. That copy
+  traces to no commit; move anything worth keeping into the repo.
+
 ## Check the lab
 
 ```sh
@@ -20,7 +121,7 @@ node failed or has not converged for `CONVERGENCE_STALE_SECONDS`.
 NetBox is the source of truth. It runs as a container on the lab host and is
 published on the **host loopback only** — `http://127.0.0.1:8000`. It is not
 on the home LAN. The provisioning segment reaches it through a separate,
-host-local proxy on `10.42.0.1:8001` that only nodes use (see
+host-local proxy on `10.44.0.1:8001` that only nodes use (see
 [`discovery.md`](discovery.md)).
 
 Browse it from your workstation by forwarding the port over the same SSH
@@ -202,13 +303,18 @@ Each node's serial console is also written to `$LAB_VM_DIR/console/<node>.log`.
 | Service | Address | Reachable from |
 | --- | --- | --- |
 | NetBox UI and API | `http://127.0.0.1:8000` | the lab host, and your workstation over the SSH tunnel above |
-| NetBox API, node-facing | `http://10.42.0.1:8001` | the provisioning segment only |
-| Redfish (sushy-emulator) | `http://10.42.0.1:8000` | the provisioning segment |
-| Node API | `http://10.42.0.1:8002` | the provisioning segment |
-| warewulfd, iPXE and images | `http://10.42.0.1:9873` | the provisioning segment |
+| NetBox API, node-facing | `http://10.44.0.1:8001` | the provisioning segment only |
+| Redfish (sushy-emulator) | `http://10.44.0.1:8000` | the provisioning segment |
+| Node API | `http://10.44.0.1:8002` | the provisioning segment |
+| warewulfd, iPXE and images | `http://10.44.0.1:9873` | the provisioning segment |
 | node_exporter | `<node>:9100` | the segment; scraped by Prometheus on the head node |
 | slurmctld / slurmd | `:6817` / `:6818` | the segment |
 | slurmdbd | `:6819` | listens on every address, Munge-authenticated; its clients are on the head node (`slurmctld`, `sacct`, `sacctmgr`) |
+| sshd, head node | `:22` | your workstation, through `ssh cluster` |
+| sshd, nodes | `<node>:22` | the head node; your workstation through `ssh <node>` |
+| NFS (`/home`, `/opt/software`) | `10.44.0.1:2049` | the provisioning segment |
+| Prometheus | `:9090` | the lab host; your workstation through `ssh -N cluster-tunnel` |
+| Alertmanager | `:9093` | the lab host; your workstation through `ssh -N cluster-tunnel` |
 | MariaDB (accounting) | `127.0.0.1:3306` and the local socket | `slurmdbd` only |
 
 ## Alerting and runbooks
