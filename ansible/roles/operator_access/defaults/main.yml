@@ -1,0 +1,6 @@
+---
+# Each job user gets a cluster key whose public half is in its own
+# authorized_keys. /home is shared, so that one key lets the user ssh between
+# the head node and any node without anything per node. Names and host keys
+# for those logins come from the dnsmasq and warewulf_server roles.
+operator_access_users: "{{ cluster_job_users }}"

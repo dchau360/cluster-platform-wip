@@ -1,7 +1,8 @@
 ---
 # Operator login from the head node: `sudo ssh cnNN`. Key only, never a
-# password; root by key only. Non-root users get no SSH path here: on a
-# production cluster that is pam_slurm_adopt, see docs/operations.md.
+# password; root by key only. Job users log in with the key in their shared
+# /home; fencing that to nodes running their jobs is pam_slurm_adopt, see
+# docs/operations.md.
 - name: Allow key authentication only
   ansible.builtin.copy:
     dest: "{{ node_sshd_dropin }}"

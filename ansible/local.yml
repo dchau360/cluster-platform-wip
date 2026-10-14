@@ -56,6 +56,10 @@
           ansible.builtin.include_role:
             name: network_from_netbox
 
+        - name: Head-node shares, /home and /opt/software
+          ansible.builtin.include_role:
+            name: shared_storage
+
         - name: Munge, with the overlay-delivered cluster key
           ansible.builtin.include_role:
             name: munge

@@ -1,0 +1,45 @@
+---
+- name: Look for the NFS mount helper
+  ansible.builtin.stat:
+    path: "{{ shared_storage_mount_helper }}"
+  register: shared_storage_helper
+
+- name: Refuse an image that cannot mount the head-node shares
+  when: shared_storage_activate | bool
+  ansible.builtin.assert:
+    that: shared_storage_helper.stat.exists
+    fail_msg: >-
+      {{ shared_storage_mount_helper }} is missing: this node booted an image
+      without nfs-utils. Roll the node onto a compute image that has it.
+    quiet: true
+
+- name: Create the mount points
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    mode: "0755"
+  loop: "{{ shared_storage_mounts }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Render a mount unit per share
+  ansible.builtin.template:
+    src: share.mount.j2
+    dest: "/etc/systemd/system/{{ item.path | regex_replace('^/', '') | replace('/', '-') }}.mount"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ shared_storage_mounts }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Mount the shares
+  when: shared_storage_activate | bool
+  ansible.builtin.systemd:
+    name: "{{ item.path | regex_replace('^/', '') | replace('/', '-') }}.mount"
+    daemon_reload: true
+    enabled: true
+    state: started
+  loop: "{{ shared_storage_mounts }}"
+  loop_control:
+    label: "{{ item.path }}"
