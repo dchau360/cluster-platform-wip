@@ -678,7 +678,11 @@ account sprawl.
 **Fix.** Join the head node and the nodes to LDAP/SSSD (or the site's IdP),
 map directory groups to Slurm accounts, and have `sacctmgr` associations
 rendered from the directory rather than from `group_vars`. Keep a break-glass
-local account.
+local account. Node login for users goes with it: `pam_slurm_adopt` on the
+nodes, so a user can SSH only to a node running one of their jobs, with
+`PrologFlags=Contain` on the controller. Today only root on the head node can
+log in to a node (`node_sshd`, SRE-21); the Slurm image does not ship the
+`slurm-pam_slurm` package yet.
 
 **Effort.** 5–8 days.
 

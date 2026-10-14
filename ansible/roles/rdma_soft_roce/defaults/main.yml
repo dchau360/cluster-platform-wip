@@ -13,8 +13,8 @@
 # prediction of what an HCA would do.
 #
 # It is configured here, on the node, because the node is the only thing that
-# knows which of its links holds the provisioning address, and because a
-# compute node has no inbound SSH for anyone to configure it over.
+# knows which of its links holds the provisioning address, and because
+# nothing configures a compute node over SSH.
 rdma_soft_roce_enabled: true
 
 # A missing driver or a missing RDMA userspace is reported and skipped, not

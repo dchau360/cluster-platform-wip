@@ -1,22 +1,4 @@
 ---
-- name: Require the node addresses warewulf_server read from NetBox
-  ansible.builtin.assert:
-    that:
-      - warewulf_server_node_addresses is defined
-      - warewulf_server_node_addresses | length == lab_node_count | int
-    fail_msg: operator_access runs after warewulf_server, which reads node addresses from NetBox
-    quiet: true
-
-- name: Resolve every node by name on the head node
-  become: true
-  ansible.builtin.blockinfile:
-    path: /etc/hosts
-    marker: "# {mark} {{ operator_access_hosts_marker }}"
-    block: |
-      {% for name, address in warewulf_server_node_addresses | dictsort %}
-      {{ address }} {{ name }} {{ name }}.{{ lab_prov_domain }}
-      {% endfor %}
-
 - name: Create each job user's ssh directory
   become: true
   ansible.builtin.file:
@@ -61,17 +43,3 @@
   loop: "{{ operator_access_pubkeys.results }}"
   loop_control:
     label: "{{ item.item.name }}"
-
-- name: Accept node host keys without a prompt
-  become: true
-  ansible.builtin.blockinfile:
-    path: /etc/ssh/ssh_config.d/50-cluster-nodes.conf
-    create: true
-    mode: "0644"
-    marker: "# {mark} {{ operator_access_hosts_marker }}"
-    block: |
-      # Every node presents the cluster host key from the Warewulf
-      # ssh.host_keys overlay, so the first sighting is safe to record and a
-      # rebuilt node keeps it. Without this, mpirun and pdsh stop at a prompt.
-      Host {{ lab_node_name_prefix }}*
-        StrictHostKeyChecking accept-new

@@ -91,7 +91,8 @@ careful.
 
 ### Nodes pull, and only four jobs are pushed
 
-A compute node has no inbound SSH and holds no credential. It configures
+Nothing configures a compute node over SSH, and a node holds no credential.
+(sshd runs, key-only, for operator login; no automation uses it.) It configures
 itself with `ansible-pull` from a pinned `deployed` ref on a mirror the head
 node serves. The head node runs exactly the four jobs a node cannot do for
 itself: the Slurm controller and its configuration, the day-2 plays, the

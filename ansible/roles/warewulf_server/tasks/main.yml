@@ -106,6 +106,53 @@
   changed_when: false
   notify: Rebuild overlays
 
+# Every node boots those same host keys, so the head node can trust them
+# before the first login: one known_hosts line per key type, naming every node
+# name and address in the NetBox render the dnsmasq role wrote. `sudo ssh
+# cn01` then asks nothing. Nodes outside that list still get the usual prompt.
+- name: Find the cluster SSH host public keys
+  become: true
+  ansible.builtin.find:
+    paths: "{{ warewulf_server_conf_dir }}/keys"
+    patterns: ssh_host_*_key.pub
+  register: warewulf_server_host_pubkey_files
+
+- name: Read the cluster SSH host public keys
+  become: true
+  ansible.builtin.slurp:
+    src: "{{ item.path }}"
+  loop: "{{ warewulf_server_host_pubkey_files.files | sort(attribute='path') }}"
+  loop_control: {label: "{{ item.path | basename }}"}
+  register: warewulf_server_host_pubkeys
+
+- name: Read the node names NetBox renders
+  become: true
+  ansible.builtin.slurp:
+    src: "{{ lab_state_dir }}/dnsmasq/netbox-hosts"
+  register: warewulf_server_node_hosts
+  failed_when: false
+
+- name: Trust the cluster host keys for every node name
+  become: true
+  vars:
+    warewulf_server_node_names: >-
+      {{ (warewulf_server_node_hosts.content | default('') | b64decode).split()
+         | unique | list }}
+  when:
+    - warewulf_server_node_names | length > 0
+    - warewulf_server_host_pubkeys.results | default([]) | length > 0
+  ansible.builtin.blockinfile:
+    path: /etc/ssh/ssh_known_hosts
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+    marker: "# {mark} cluster-lab node host keys, from warewulf. Do not edit by hand."
+    block: |
+      {% for key in warewulf_server_host_pubkeys.results %}
+      {{ warewulf_server_node_names | join(',') }} {{ (key.content | b64decode).split()[:2] | join(' ') }}
+      {% endfor %}
+
 # ---------------------------------------------------------------------------
 # Node image, imported from a public registry.
 # ---------------------------------------------------------------------------

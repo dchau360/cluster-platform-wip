@@ -1,11 +1,20 @@
 ---
-- name: Render the key-only sshd policy
-  ansible.builtin.template:
-    src: 10-cluster.conf.j2
+# Operator login from the head node: `sudo ssh cnNN`. Key only, never a
+# password; root by key only. Job users log in with the key in their shared
+# /home; fencing that to nodes running their jobs is pam_slurm_adopt, see
+# docs/operations.md.
+- name: Allow key authentication only
+  ansible.builtin.copy:
     dest: "{{ node_sshd_dropin }}"
     owner: root
     group: root
     mode: "0600"
+    content: |
+      # Written by the node_sshd role (ansible-pull). Do not edit by hand.
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin prohibit-password
+      PubkeyAuthentication yes
   notify: Restart sshd
 
 - name: Enable and start sshd
@@ -14,11 +23,30 @@
     enabled: true
     state: started
 
-# A drop-in cannot be validated on its own, so the whole configuration is
-# checked once sshd has generated or received its host keys, before the
-# restart the handler would do.
-- name: Check the sshd configuration parses
+- name: Apply a configuration change before checking it
+  ansible.builtin.meta: flush_handlers
+
+# The effective configuration, not the file: proves the drop-in is included
+# and that nothing read earlier overrides it.
+- name: Read sshd's effective configuration
   when: not ansible_check_mode
   ansible.builtin.command:
-    cmd: /usr/sbin/sshd -t
+    cmd: /usr/sbin/sshd -T
+  register: node_sshd_effective
   changed_when: false
+
+- name: Refuse an sshd that would accept a password
+  when: not ansible_check_mode
+  ansible.builtin.assert:
+    that:
+      - "'passwordauthentication no' in node_sshd_effective.stdout_lines"
+      - "'kbdinteractiveauthentication no' in node_sshd_effective.stdout_lines"
+      - "'permitrootlogin without-password' in node_sshd_effective.stdout_lines"
+    fail_msg: sshd's effective configuration still allows password login
+    quiet: true
+
+- name: Wait for sshd to listen
+  when: not ansible_check_mode
+  ansible.builtin.wait_for:
+    port: "{{ node_sshd_port | int }}"
+    timeout: 30

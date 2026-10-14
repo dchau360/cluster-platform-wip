@@ -4,8 +4,8 @@
 #
 # Delivered by the cluster-pull Warewulf runtime overlay, with
 # /etc/cluster-pull/pull.env beside it. Run by cluster-pull.service at boot and
-# by cluster-pull.timer after that. The node has no inbound SSH and no
-# credential: it clones the pinned ref from the head node's read-only mirror
+# by cluster-pull.timer after that. Nothing configures the node over SSH, and
+# it holds no credential: it clones the pinned ref from the head node's read-only mirror
 # and reports through the head-node API, which knows it by its address.
 #
 # ansible-pull clones, then runs local.yml, which reports its own result. If

@@ -13,10 +13,18 @@ The GUID path is real code exercised against **synthetic** GUID data only:
 the lab has no InfiniBand hardware. See
 docs/ib-and-dhcp-option61.md.
 
+The same entries also render a hosts(5) file, ``<ip> <name> <name>.<domain>``
+for each node's provisioning address, so the head node resolves node names
+from NetBox too. ``--etc-hosts`` copies that file into a marked block of
+``/etc/hosts``. It reads only the rendered file, never NetBox, so it can run at
+boot before NetBox is up: WSL rewrites ``/etc/hosts`` every time the
+distribution starts, and scripts/net-up.sh puts the block back.
+
 `pynetbox` is imported inside `main()` so the pure rendering function can be
 unit-tested on a machine that has no NetBox client installed.
 """
 import os
+import sys
 import stat
 import tempfile
 from pathlib import Path
@@ -44,6 +52,55 @@ def render_entries(entries):
         if guid_line is not None:
             lines.append(guid_line)
     return sorted(set(lines))
+
+
+def render_hosts(entries, domain):
+    """hosts(5) lines for each node's provisioning address.
+
+    Only an entry with a MAC is the provisioning interface; an IB interface's
+    address must not become a second answer for the node's name.
+    """
+    lines = []
+    for entry in entries:
+        hostname = entry.get("hostname")
+        ip = entry.get("ip")
+        if not hostname or not ip or not entry.get("mac"):
+            continue
+        names = [hostname, f"{hostname}.{domain}"] if domain else [hostname]
+        lines.append(f"{ip}\t{' '.join(names)}\n")
+    return sorted(set(lines))
+
+
+HOSTS_BEGIN = "# BEGIN cluster-lab nodes, rendered from NetBox. Do not edit by hand.\n"
+HOSTS_END = "# END cluster-lab nodes\n"
+
+
+def merge_hosts_block(current, lines):
+    """``current`` with the marked block replaced by ``lines``.
+
+    The block is appended when absent, and everything outside it is kept as
+    it is: the rest of /etc/hosts belongs to WSL or to the operator.
+    """
+    block = HOSTS_BEGIN + "".join(lines) + HOSTS_END
+    start = current.find(HOSTS_BEGIN)
+    end = current.find(HOSTS_END, start) if start != -1 else -1
+    if start != -1 and end != -1:
+        return current[:start] + block + current[end + len(HOSTS_END):]
+    if current and not current.endswith("\n"):
+        current += "\n"
+    return current + block
+
+
+def sync_etc_hosts(source, target):
+    """Copy the rendered hosts file into ``target``'s marked block."""
+    lines = source.read_text().splitlines(keepends=True) if source.exists() else []
+    current = target.read_text() if target.exists() else ""
+    merged = merge_hosts_block(current, lines)
+    if merged == current:
+        return False
+    # In place, not by rename: /etc/hosts may be a bind mount.
+    target.write_text(merged)
+    return True
 
 
 def entry_hostname(address, device):
@@ -114,21 +171,33 @@ def write_output(target, lines):
     return True
 
 
-def main():
+def main(argv):
+    hosts_file = Path(os.environ.get(
+        "DNSMASQ_NETBOX_HOSTS_OUTPUT",
+        "/var/lib/cluster-lab/dnsmasq/netbox-hosts"))
+    if argv[1:] == ["--etc-hosts"]:
+        target = Path(os.environ.get("ETC_HOSTS", "/etc/hosts"))
+        print("changed" if sync_etc_hosts(hosts_file, target) else "unchanged")
+        return
+
     import pynetbox  # imported here so the renderer can be tested alone
 
     nb = pynetbox.api(os.environ["NETBOX_URL"],
                       token=os.environ["NETBOX_TOKEN"])
-    lines = render_entries(netbox_entries(nb))
+    entries = netbox_entries(nb)
     target = Path(os.environ.get(
         "DNSMASQ_NETBOX_OUTPUT",
         "/var/lib/cluster-lab/dnsmasq/netbox-hosts.conf"))
     target.parent.mkdir(parents=True, exist_ok=True)
+    # The hosts file is dnsmasq's only by location: dnsmasq does not read it,
+    # so a change to it alone is no reason to restart dnsmasq.
+    write_output(hosts_file, render_hosts(
+        entries, os.environ.get("PROV_DOMAIN", "")))
     # Say whether anything changed, so the role restarts dnsmasq exactly when
     # the reservations moved. A renderer that always reported "unchanged"
     # left dnsmasq serving stale reservations until something else restarted it.
-    print("changed" if write_output(target, lines) else "unchanged")
+    print("changed" if write_output(target, render_entries(entries)) else "unchanged")
 
 
 if __name__ == "__main__":  # pragma: no cover
-    main()
+    main(sys.argv)

@@ -1,9 +1,6 @@
 ---
-# Names on the head node. Nodes already resolve each other through the
-# Warewulf hosts overlay; this gives the head node the same names, from the
-# same NetBox addresses warewulf_server read.
-operator_access_hosts_marker: "cluster nodes, from NetBox"
 # Each job user gets a cluster key whose public half is in its own
 # authorized_keys. /home is shared, so that one key lets the user ssh between
-# the head node and any node without anything per node.
+# the head node and any node without anything per node. Names and host keys
+# for those logins come from the dnsmasq and warewulf_server roles.
 operator_access_users: "{{ cluster_job_users }}"

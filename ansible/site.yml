@@ -40,7 +40,7 @@
   # and the Slurm renderer read NetBox; the controller needs the cluster Munge
   # key warewulf_server generates; slurmctld reports to slurmdbd, so
   # accounting is up first; Prometheus scrapes the node API. operator_access
-  # writes /etc/hosts from the node addresses warewulf_server read from NetBox.
+  # writes job users' keys into /home, which nfs_server exports.
   roles:
     - netbox
     - dnsmasq
