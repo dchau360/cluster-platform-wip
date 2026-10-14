@@ -20,7 +20,7 @@
       register: node_pull_sshd
       changed_when: false
 
-    - name: sshd takes keys only
+    - name: The node takes keys only for SSH
       ansible.builtin.assert:
         that:
           - "'passwordauthentication no' in node_pull_sshd.stdout_lines"
