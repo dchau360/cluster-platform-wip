@@ -29,7 +29,11 @@
     owner: "{{ item.0.name }}"
     group: "{{ item.0.name }}"
     mode: "{{ item.1.mode }}"
-  loop: "{{ operator_access_users | product([{'file': 'id_ed25519', 'mode': '0600'}, {'file': 'id_ed25519.pub', 'mode': '0644'}]) | list }}"
+  vars:
+    operator_access_key_files:
+      - {file: id_ed25519, mode: "0600"}
+      - {file: id_ed25519.pub, mode: "0644"}
+  loop: "{{ operator_access_users | product(operator_access_key_files) | list }}"
   loop_control:
     label: "{{ item.0.name }} {{ item.1.file }}"
 
