@@ -14,6 +14,17 @@
     group: "{{ nfs_server_software_group }}"
     mode: "2775"
 
+# exportfs reads /etc/exports.d, but Ubuntu's nfs-kernel-server does not
+# create it.
+- name: Create the exports drop-in directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ nfs_server_exports_file | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Export the shares to the provisioning segment only
   become: true
   ansible.builtin.template:
