@@ -14,7 +14,7 @@
 # write-up says so. See docs/rdma-soft-roce.md.
 #
 # How it runs the benchmark without logging in to a node: it does not log in.
-# A compute node has no inbound SSH and holds no credential. The server and
+# Nothing drives a compute node over SSH, and it holds no credential. The server and
 # the client are two Slurm jobs, each pinned to one node of the pair, which is
 # the same path any user's job would take.
 

@@ -1,7 +1,9 @@
 # Node self-configuration
 
-A compute node configures itself. It has no inbound SSH and holds no
-credential of its own. The head node runs four jobs a node cannot do for
+A compute node configures itself. Nothing configures it over SSH, and it holds
+no credential of its own. sshd does run, key-only, so an operator can
+`sudo ssh cn01` from the head node (SRE-21, [`operations.md`](operations.md#log-in-to-a-node));
+no play, script or drill uses that path. The head node runs four jobs a node cannot do for
 itself: the Slurm controller and its configuration, the day-2 plays, the
 burn-in acceptance gate, and promotion of the `deployed` ref.
 
@@ -189,7 +191,8 @@ required check.
 ## Evidence
 
 Recorded on the lab at N=2 on 2026-10-12; the full output is in the SRE-7
-issue thread.
+issue thread. The `:22 refused` row is as recorded then; since SRE-21 sshd
+listens for key-only operator login, and the pull path is unchanged.
 
 | Check | Result |
 |-------|--------|

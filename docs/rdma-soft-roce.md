@@ -68,8 +68,9 @@ install a benchmark for itself at boot.
 
 ## How the benchmark runs without logging in to a node
 
-It does not log in. A compute node has no inbound SSH and holds no
-credential of its own; that invariant is not suspended for a test.
+It does not log in. Nothing configures or drives a compute node over SSH, and
+a node holds no credential of its own; that invariant is not suspended for a
+test. (sshd runs for operator login only.)
 
 `make rdma-test` submits two Slurm jobs: the `perftest` server pinned to one
 node of the pair, the client pinned to the other. That is the same path any

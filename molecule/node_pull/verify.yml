@@ -11,8 +11,20 @@
 
     - name: The node's services are enabled
       ansible.builtin.command:  # noqa: command-instead-of-module
-        cmd: systemctl is-enabled munge slurmd node_exporter
+        cmd: systemctl is-enabled munge slurmd node_exporter sshd
       changed_when: false
+
+    - name: Read sshd's effective configuration
+      ansible.builtin.command:
+        cmd: /usr/sbin/sshd -T
+      register: node_pull_sshd
+      changed_when: false
+
+    - name: sshd takes keys only
+      ansible.builtin.assert:
+        that:
+          - "'passwordauthentication no' in node_pull_sshd.stdout_lines"
+          - "'permitrootlogin without-password' in node_pull_sshd.stdout_lines"
 
     - name: Read slurmd's options
       ansible.builtin.slurp:

@@ -24,7 +24,7 @@ flowchart LR
     PROM["Prometheus — convergence and staleness alerts<br/>ansible/roles/prometheus/"]
   end
 
-  subgraph NODE["compute node, N of them — UEFI q35 guest, no inbound SSH, no credential"]
+  subgraph NODE["compute node, N of them — UEFI q35 guest, no credential, configured by pull"]
     direction TB
     BOOT["UEFI PXE, iPXE, two-stage dracut<br/>scripts/nodes-up.sh"]
     PULL["cluster-pull.service and .timer<br/>ansible-pull -C deployed ansible/local.yml<br/>ansible/roles/warewulf_server/files/cluster-pull/"]

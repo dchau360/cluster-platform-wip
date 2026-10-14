@@ -224,8 +224,10 @@ Not "should not" — *cannot*, and each for a different reason:
 
 The head node never logs in to a node to do any of it. Rebooting is Redfish;
 draining is `slurmctld`; health is what the node itself reported to NetBox.
-There is no inbound SSH to a compute node — `root@<node>:22` is refused, and
-that is recorded as evidence, not asserted.
+No play, script or drill opens an SSH session to a compute node. Until
+SRE-21 sshd did not even run (`root@<node>:22` refused, recorded in SRE-7).
+It now runs, key-only, so an operator can `sudo ssh cn01` from the head node
+to look at a node; automation still never does.
 
 ### Why node-local convergence is pull
 
@@ -242,6 +244,15 @@ NetBox token and no SSH key; `cluster-node-api` on the head node holds the one
 token and offers a node three calls, all about itself, none of which can write
 a status or a name. A push design needs the mirror image of that: a key on the
 head node that can become root on every node in the cluster.
+
+**Accepted, for operator login:** the head node's root key *is* such a key.
+Warewulf's `ssh.authorized_keys` overlay has always put it on every node; since
+SRE-21 sshd listens, so it works. The exposure is bounded: password and
+keyboard-interactive login are off, sshd listens only on the isolated segment,
+and only root on the head node holds the key. Automation does not depend on
+it: switch `node_sshd` off and every play, drill and gate still passes. The
+production shape is per-operator keys or an SSH CA for root, and
+`pam_slurm_adopt` for users (see [`operations.md`](operations.md#log-in-to-a-node)).
 
 **Designed:** a node that was powered off during a change is not stale
 forever — it converges on its next boot, because convergence is something the

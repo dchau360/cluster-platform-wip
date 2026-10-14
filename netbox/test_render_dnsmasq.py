@@ -123,5 +123,60 @@ class EntryHostnameTest(unittest.TestCase):
         )
 
 
+class RenderHostsTest(unittest.TestCase):
+    ENTRIES = [
+        {"hostname": "cn02", "ip": "10.42.0.21",
+         "mac": "52:54:00:00:00:02", "ib_guid": None},
+        {"hostname": "cn01", "ip": "10.42.0.20",
+         "mac": "52:54:00:00:00:01", "ib_guid": None},
+        # An IB address must not become a second answer for the name.
+        {"hostname": "cn01", "ip": "10.43.0.20",
+         "mac": None, "ib_guid": PORT_GUID},
+    ]
+
+    def test_provisioning_addresses_with_short_and_qualified_names(self):
+        self.assertEqual(
+            render_dnsmasq.render_hosts(self.ENTRIES, "lab.internal"),
+            ["10.42.0.20\tcn01 cn01.lab.internal\n",
+             "10.42.0.21\tcn02 cn02.lab.internal\n"])
+
+    def test_no_domain_renders_the_short_name_only(self):
+        self.assertEqual(render_dnsmasq.render_hosts(self.ENTRIES[:1], ""),
+                         ["10.42.0.21\tcn02\n"])
+
+
+class EtcHostsBlockTest(unittest.TestCase):
+    WSL = "127.0.0.1\tlocalhost\n::1\tip6-localhost\n"
+    LINES = ["10.42.0.20\tcn01 cn01.lab.internal\n"]
+
+    def test_block_is_appended_and_the_rest_is_kept(self):
+        merged = render_dnsmasq.merge_hosts_block(self.WSL, self.LINES)
+        self.assertTrue(merged.startswith(self.WSL))
+        self.assertIn(render_dnsmasq.HOSTS_BEGIN + self.LINES[0]
+                      + render_dnsmasq.HOSTS_END, merged)
+
+    def test_block_is_replaced_in_place_not_duplicated(self):
+        once = render_dnsmasq.merge_hosts_block(self.WSL + "# tail\n", ["old\n"])
+        twice = render_dnsmasq.merge_hosts_block(once, self.LINES)
+        self.assertEqual(twice.count(render_dnsmasq.HOSTS_BEGIN), 1)
+        self.assertNotIn("old\n", twice)
+        self.assertTrue(twice.endswith("# tail\n" + render_dnsmasq.HOSTS_BEGIN
+                                       + self.LINES[0] + render_dnsmasq.HOSTS_END))
+
+    def test_file_without_a_final_newline_stays_intact(self):
+        merged = render_dnsmasq.merge_hosts_block("127.0.0.1 localhost", self.LINES)
+        self.assertTrue(merged.startswith("127.0.0.1 localhost\n# BEGIN"))
+
+    def test_sync_reports_a_change_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "netbox-hosts"
+            target = Path(tmp) / "hosts"
+            source.write_text("".join(self.LINES))
+            target.write_text(self.WSL)
+            self.assertTrue(render_dnsmasq.sync_etc_hosts(source, target))
+            self.assertFalse(render_dnsmasq.sync_etc_hosts(source, target))
+            self.assertIn("cn01.lab.internal", target.read_text())
+
+
 if __name__ == "__main__":
     unittest.main()

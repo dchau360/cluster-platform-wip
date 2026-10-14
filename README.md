@@ -132,7 +132,7 @@ flowchart LR
     PROM["Prometheus — convergence and staleness alerts<br/>ansible/roles/prometheus/"]
   end
 
-  subgraph NODE["compute node, N of them — UEFI q35 guest, no inbound SSH, no credential"]
+  subgraph NODE["compute node, N of them — UEFI q35 guest, no credential, configured by pull"]
     direction TB
     BOOT["UEFI PXE, iPXE, two-stage dracut<br/>scripts/nodes-up.sh"]
     PULL["cluster-pull.service and .timer<br/>ansible-pull -C deployed ansible/local.yml<br/>ansible/roles/warewulf_server/files/cluster-pull/"]
@@ -324,8 +324,9 @@ to the bridge address with `bind-interfaces`. `make verify-isolation`
 proves it from inside the segment, using a network namespace configured the
 way a node would be. See [`docs/network-isolation.md`](docs/network-isolation.md).
 
-**Nodes pull; only four jobs are pushed.** A compute node has no inbound SSH
-and holds no credential. It configures itself with `ansible-pull` from a pinned
+**Nodes pull; only four jobs are pushed.** Nothing configures a compute node
+over SSH, and a node holds no credential. sshd runs, key-only, for an
+operator's `sudo ssh cn01` from the head node and for nothing else. It configures itself with `ansible-pull` from a pinned
 `deployed` ref. The head node runs the four jobs a node cannot do for itself:
 the Slurm controller and its configuration, the day-2 plays, the burn-in gate,
 and promotion of the `deployed` ref. Node configuration is therefore **O(1) in

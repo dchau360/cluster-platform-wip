@@ -4,7 +4,8 @@
 # Invoked by `ansible-pull` from the cluster-pull unit the cluster-pull
 # Warewulf overlay delivers: once immediately at boot, then on a splayed
 # timer. It pulls the pinned `deployed` ref from the head node's mirror, never
-# `main`. The node has no inbound SSH and holds no credential: it reads its own
+# `main`. The node holds no credential and needs no inbound SSH to configure
+# itself (sshd runs for operator login only, see node_sshd): it reads its own
 # NetBox record and writes back its result through the head-node API, which
 # identifies it by its address on the isolated provisioning segment.
 #
@@ -62,6 +63,10 @@
         - name: Node exporter
           ansible.builtin.include_role:
             name: node_exporter
+
+        - name: Operator login from the head node, key only
+          ansible.builtin.include_role:
+            name: node_sshd
 
         - name: Soft-RoCE RDMA device on the provisioning NIC
           when: rdma_soft_roce_enabled | default(true) | bool
