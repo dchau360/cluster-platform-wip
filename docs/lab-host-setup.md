@@ -69,6 +69,28 @@ path inside the libvirt image tree. That is not cosmetic: the libvirt
 AppArmor profile already grants QEMU access there, and a path outside it
 gets denied at VM start.
 
+## Keep WSL running when nobody is logged in
+
+By default WSL powers a distribution off about a minute after its last
+session closes, and that takes the head node and every node VM with it. It
+happens even with `vmIdleTimeout=-1`: that setting keeps the WSL VM alive,
+not the distribution. Both settings go in `%USERPROFILE%\.wslconfig` on
+Windows:
+
+```ini
+[general]
+instanceIdleTimeout=-1
+
+[wsl2]
+vmIdleTimeout=-1
+nestedVirtualization=true
+```
+
+Then `wsl --shutdown` once to apply them. This was measured on the lab: with
+only `vmIdleTimeout` set, the distribution logged `The system will power off
+now!` 40 seconds after the last SSH session closed, part-way through a
+`make demo`. With both set, it stayed up.
+
 ## Cold start
 
 WSL does not boot with Windows. It starts when something first enters the

@@ -3,6 +3,29 @@
 # password; root by key only. Job users log in with the key in their shared
 # /home; fencing that to nodes running their jobs is pam_slurm_adopt, see
 # docs/operations.md.
+# OpenSSH 9.8 and later penalise a source address after one slow or failed
+# login by refusing every new connection from it for a while, and the penalty
+# grows with each retry. Every connection to a node comes from the head node,
+# so one bad login would lock every operator and every MPI launch out of that
+# node. Exempt the head node. Older sshd rejects the keyword outright, which
+# would leave the node with no sshd, so it is written only when supported.
+# The version comes from `ssh -V`, the same openssh build: `sshd -T` would
+# need host keys, and its answer would change once they exist.
+- name: Read the OpenSSH version
+  ansible.builtin.command:
+    cmd: ssh -V
+  register: node_sshd_version
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Note whether this sshd penalises sources
+  ansible.builtin.set_fact:
+    node_sshd_penalties: >-
+      {{ (node_sshd_version.stderr | default('')
+          | regex_search('[0-9]+[.][0-9]+') | default('0', true))
+         is version('9.8', '>=') }}
+
 - name: Allow key authentication only
   ansible.builtin.copy:
     dest: "{{ node_sshd_dropin }}"
@@ -15,6 +38,9 @@
       KbdInteractiveAuthentication no
       PermitRootLogin prohibit-password
       PubkeyAuthentication yes
+      {% if node_sshd_penalties and node_sshd_penalty_exempt | length > 0 %}
+      PerSourcePenaltyExemptList {{ node_sshd_penalty_exempt | join(',') }}
+      {% endif %}
   notify: Restart sshd
 
 - name: Enable and start sshd

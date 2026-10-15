@@ -56,19 +56,25 @@ node has no repository to reach, and anything installed by hand disappears at
 the next reboot. There are two right places:
 
 1. **Applications and toolchains: `/opt/software` on the head node.**
-   Install there as `hpc` or root, and every node sees it at once. Binary
-   releases, Python virtual environments, conda environments and Spack all
-   work this way:
+   Install there as `hpc` or root, and every node sees it at once. The head
+   node is Ubuntu and the nodes are Rocky 9, so what goes there must bring
+   its own runtime or be built for Rocky 9. A `python3 -m venv` made on the
+   head node does **not** work on the nodes: it points at the head node's
+   Python 3.14, and the nodes have 3.9. Use a conda environment, which
+   carries its own interpreter:
    ```sh
    ssh cluster
-   sudo -u hpc python3 -m venv /opt/software/venvs/sci
-   sudo -u hpc /opt/software/venvs/sci/bin/pip install numpy
-   sudo -u hpc srun -N4 /opt/software/venvs/sci/bin/python -c 'import numpy; print(numpy.__version__)'
+   sudo -iu hpc
+   mkdir -p /opt/software/bin
+   curl -fsSL https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xj -C /opt/software bin/micromamba
+   export MAMBA_ROOT_PREFIX=/opt/software/conda
+   /opt/software/bin/micromamba create -y -p /opt/software/envs/sci -c conda-forge python=3.12 numpy
+   srun -N4 /opt/software/envs/sci/bin/python -c 'import numpy; print(numpy.__version__)'
    ```
-   The head node is Ubuntu and the nodes are Rocky 9. Pure-Python packages
-   and static binaries do not care; anything that links against system
-   libraries should be built for Rocky 9, for example in a scratch copy of the
-   node image (below).
+   Build compiled code for Rocky 9 in a container on the head node,
+   `sudo docker run --rm -v /opt/software:/opt/software rockylinux/rockylinux:9 ...`,
+   so that what it writes to `/opt/software` runs on the nodes unchanged.
+   Static binaries work as they are.
 2. **System packages, drivers, libraries every node needs: the image.** See
    the next section. It is the only route that survives a reboot and is the
    same on every node.
