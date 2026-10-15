@@ -9,17 +9,22 @@
 # so one bad login would lock every operator and every MPI launch out of that
 # node. Exempt the head node. Older sshd rejects the keyword outright, which
 # would leave the node with no sshd, so it is written only when supported.
-- name: Read sshd's defaults
+# The version comes from `ssh -V`, the same openssh build: `sshd -T` would
+# need host keys, and its answer would change once they exist.
+- name: Read the OpenSSH version
   ansible.builtin.command:
-    cmd: /usr/sbin/sshd -T
-  register: node_sshd_defaults
+    cmd: ssh -V
+  register: node_sshd_version
   changed_when: false
   failed_when: false
   check_mode: false
 
 - name: Note whether this sshd penalises sources
   ansible.builtin.set_fact:
-    node_sshd_penalties: "{{ 'persourcepenalties' in (node_sshd_defaults.stdout | default('')) }}"
+    node_sshd_penalties: >-
+      {{ (node_sshd_version.stderr | default('')
+          | regex_search('[0-9]+[.][0-9]+') | default('0', true))
+         is version('9.8', '>=') }}
 
 - name: Allow key authentication only
   ansible.builtin.copy:

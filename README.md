@@ -44,7 +44,7 @@ What the project proves, how it is measured, and the design behind it are in
  ---------------------------------------------------------------------------
       |  br-prov: an isolated bridge, 10.44.0.0/22, no route to your LAN
       v
- cn01  cn02  cn03  cn04 ...   KVM guests, UEFI PXE boot, stateless Rocky 9,
+ cn01 ... cnNN               KVM guests, UEFI PXE boot, stateless Rocky 9,
                               slurmd, sshd (key only), node_exporter
 ```
 
@@ -476,7 +476,7 @@ powershell -ExecutionPolicy Bypass -File \\wsl$\Ubuntu\home\<you>\src\cluster-pl
 
 | You want to | Run |
 | --- | --- |
-| Grow the lab to 6 VMs | `make demo N=6`. Set `NODE_COUNT=6` in `lab/local.env` to make it the default |
+| Grow the lab, for example to 6 VMs | `make demo N=6`. To make a count the default, set `NODE_COUNT` in `lab/local.env` |
 | Add a physical machine | Create it in NetBox (site `lab`, role `Compute`, its PXE NIC's real MAC as primary MAC), run `make converge`, then PXE-boot it. It discovers itself and arrives `staged`; `make nodes-activate` burns it in |
 | Take a node out of service | `make drain NODES=cn03`, and `make resume NODES=cn03` to bring it back |
 | Rebuild one node from bare metal; its neighbours keep running | `make drill-reprovision` |
