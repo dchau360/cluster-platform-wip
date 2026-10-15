@@ -40,8 +40,6 @@ if [[ ${#FILES[@]} -eq 0 ]]; then echo "no tracked files to scan"; exit 0; fi
 # configuration are still held to the rule.
 EVIDENCE=(
   ':(exclude)docs/measurements.md'
-  ':(exclude,glob)docs/demo/*.cast'
-  ':(exclude,glob)docs/demo/*.txt'
 )
 
 echo "== check 1: NODE_COUNT is never assigned a literal outside $ENV_EXAMPLE"

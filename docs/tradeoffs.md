@@ -94,8 +94,7 @@ in, is [`scale-analysis.md`](scale-analysis.md).
 Its genuine advantage is the one thing this lab cannot buy. A hundred real
 DHCP clients contending for one `dnsmasq`, and a hundred real HTTP fetches
 against one `warewulfd`, would turn the two weakest statements in this
-project — failure modes 1 and 2 — from arithmetic into measurement. That is
-exactly the evidence an interviewer should want.
+project — failure modes 1 and 2 — from arithmetic into measurement.
 
 **Why it lost.** The thing being demonstrated is *bare-metal provisioning*:
 UEFI firmware, PXE, DHCP option handling, a two-stage `dracut` boot, per-node
@@ -342,8 +341,6 @@ target, not a pull source.
 
 ## Read next
 
-* [`case-study.md`](case-study.md) — the whole project in first person: the
-  problem, the decisions, the numbers, and what would change next time.
 * [`measurements.md`](measurements.md) — the 1-to-N curve, every phase, per
   node.
 * [`scale-analysis.md`](scale-analysis.md) — the four named failure modes at
