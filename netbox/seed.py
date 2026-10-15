@@ -8,7 +8,7 @@ from pathlib import Path
 import pynetbox
 import yaml
 
-from address_plan import node_address
+from address_plan import node_address, relocate
 
 
 def normalize(value):
@@ -177,7 +177,9 @@ def main():
     parser.add_argument("--definition", default=Path(__file__).with_name("definition.yml"))
     parser.add_argument("--nodes", type=int, default=int(os.getenv("NODE_COUNT", "2")))
     args = parser.parse_args()
-    definition = yaml.safe_load(Path(args.definition).read_text())
+    # PROV_SUBNET moves the provisioning prefix; node_address() applies the
+    # same move, so a record and the address the node holds always agree.
+    definition = relocate(yaml.safe_load(Path(args.definition).read_text()), os.getenv("PROV_SUBNET"))
     nb = pynetbox.api(os.environ["NETBOX_URL"], token=os.environ["NETBOX_TOKEN"])
     changes = 0
     site = definition["site"]

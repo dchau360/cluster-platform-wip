@@ -258,6 +258,8 @@
     NODE_NAME_PREFIX: "{{ lab_node_name_prefix }}"
     PROV_DOMAIN: "{{ lab_prov_domain }}"
     PROV_MAC_OUI: "{{ lookup('env', 'PROV_MAC_OUI') | default('52:54:00', true) }}"
+    # Empty means the definition's own prefix.
+    PROV_SUBNET: "{{ lookup('env', 'PROV_SUBNET') }}"
   register: netbox_seed_result
   changed_when: "'changed=0' not in netbox_seed_result.stdout"
   no_log: true

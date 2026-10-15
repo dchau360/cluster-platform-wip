@@ -42,7 +42,7 @@ How it works, how to verify it, and the full documentation index are in
  |  config release          git mirror serving the `deployed` ref           |
  |  BMC emulation           sushy-emulator (Redfish power and boot order)   |
  ---------------------------------------------------------------------------
-      |  br-prov: an isolated bridge, 10.44.0.0/22, no route to your LAN
+      |  br-prov: an isolated bridge, 10.44.0.0/22 by default, no route to your LAN
       v
  cn01 ... cnNN               KVM guests, UEFI PXE boot, stateless Rocky 9,
                               slurmd, sshd (key only), node_exporter
@@ -196,6 +196,15 @@ as shipped:
 | `LAB_LAN_CIDR` | your home network, for example a `/24` | proving the cluster cannot reach it |
 | `LAB_LAN_PROBE_IP` | an address on that network that answers ping, usually the router | the same proof |
 | `NODE_COUNT` | how many compute nodes to build, for example `4` | the default for `make demo` |
+
+**Optional: pick the cluster's subnet.** The cluster gets its own network,
+`10.44.0.0/22` unless you set `PROV_SUBNET`, for example
+`PROV_SUBNET=10.46.0.0/22`. The subnet must not exist yet; `make up` creates
+it. It makes the `br-prov` bridge, gives the head node the first address on
+it as the nodes' gateway, and hands out the rest by DHCP. The node addresses
+follow it: node 1 is `<subnet>.20`. Use a private `/22` or larger. `make up`
+refuses a subnet your host already uses (another interface, a Docker network,
+or `LAB_LAN_CIDR`) and names the clash.
 
 Node size is `NODE_VCPUS`, `NODE_MEM_MB` and `NODE_DISK_GB`. The file
 documents every variable. `lab/local.env` is ignored by git, and CI fails if
@@ -486,6 +495,20 @@ powershell -ExecutionPolicy Bypass -File \\wsl$\Ubuntu\home\<you>\src\cluster-pl
 Nothing is edited per node: NetBox is the input, and DHCP, Warewulf and
 `slurm.conf` are rendered from it. See
 [Add a machine](docs/operations.md#add-a-machine).
+
+### Move the cluster to another subnet
+
+Set `PROV_SUBNET` in `lab/local.env`, then rebuild:
+
+```sh
+make down && make demo N=4
+```
+
+`make up` moves the bridge and the head node's gateway address, Ansible
+re-renders every service that listens on the gateway (dnsmasq, Warewulf,
+NetBox's node API, Slurm, NFS exports, the git mirror), NetBox moves every
+node's provisioning address, and the nodes boot onto the new network. Remove
+`PROV_SUBNET` to go back to the default.
 
 ### Change the node image
 
