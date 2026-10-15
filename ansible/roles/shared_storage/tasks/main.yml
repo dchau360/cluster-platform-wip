@@ -13,14 +13,28 @@
       without nfs-utils. Roll the node onto a compute image that has it.
     quiet: true
 
-- name: Create the mount points
-  ansible.builtin.file:
+# Create a mount point only when it is missing. Once a share is mounted on it,
+# the directory is the head node's export: /opt/software is 2775 root:hpc there,
+# and read-only here, so asserting a mode on it failed every pull after the
+# first one with EROFS. The first pull of a boot ran before the mount and
+# passed, which is why nothing noticed.
+- name: Look for the mount points
+  ansible.builtin.stat:
     path: "{{ item.path }}"
-    state: directory
-    mode: "0755"
   loop: "{{ shared_storage_mounts }}"
   loop_control:
     label: "{{ item.path }}"
+  register: shared_storage_mountpoints
+
+- name: Create the missing mount points
+  ansible.builtin.file:
+    path: "{{ item.item.path }}"
+    state: directory
+    mode: "0755"
+  loop: "{{ shared_storage_mountpoints.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+  when: not item.stat.exists
 
 - name: Render a mount unit per share
   ansible.builtin.template:
