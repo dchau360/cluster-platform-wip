@@ -1,5 +1,566 @@
 # cluster-platform-wip
 
+A small HPC cluster built the way large ones are: machines PXE-boot a node
+image over the network, NetBox is the source of truth, nodes configure
+themselves with Ansible, and Slurm runs the work. It runs on one Windows
+workstation (WSL2 plus KVM), with a head node and four compute nodes.
+
+This README is the operator's manual. It covers the whole path, in order:
+
+1. **[Build it from scratch](#part-1--build-it-from-scratch)**: a bare
+   Windows machine to a running Slurm cluster.
+2. **[Connect from your workstation](#part-2--connect-from-your-workstation)**:
+   SSH to the head node and every node, plus the web UIs.
+3. **[Use it](#part-3--use-it)**: run jobs, share files, install software,
+   read accounting.
+4. **[Run it day to day](#part-4--run-it-day-to-day)**: start and stop it, add
+   nodes, change the node image, alerts, troubleshooting.
+
+What the project proves, how it is measured, and the design behind it are in
+**[About this project](#about-this-project)**, further down.
+
+> This repository is **public**. Never commit an address, username or MAC from
+> your own network, or any key. `lab/local.env` holds those values and is not
+> tracked. See [Repository rules](#repository-rules).
+
+## The cluster at a glance
+
+```text
+ your workstation (Mac/Linux)
+      |  ssh
+      v
+ Windows host  -- OpenSSH server --  wsl -e nc 127.0.0.1 22
+      |
+      v
+ head node = the WSL2 Ubuntu distribution ----------------------------------
+ |  login + submit host     ssh cluster, sbatch, srun, sinfo, sacct         |
+ |  Slurm                   slurmctld, slurmdbd + MariaDB (accounting)      |
+ |  provisioning            dnsmasq (DHCP/TFTP), warewulfd (images)         |
+ |  source of truth         NetBox            :8000  (loopback only)        |
+ |  monitoring              Prometheus :9090, Alertmanager :9093            |
+ |  shared storage          NFS: /home (rw), /opt/software (ro on nodes)    |
+ |  config release          git mirror serving the `deployed` ref           |
+ |  BMC emulation           sushy-emulator (Redfish power and boot order)   |
+ ---------------------------------------------------------------------------
+      |  br-prov: an isolated bridge, 10.44.0.0/22, no route to your LAN
+      v
+ cn01  cn02  cn03  cn04 ...   KVM guests, UEFI PXE boot, stateless Rocky 9,
+                              slurmd, sshd (key only), node_exporter
+```
+
+The head node is the only way in. Compute nodes sit on an isolated segment
+with no internet access, the same way a production cluster's compute fabric
+does.
+
+| Machine | Role | You reach it with |
+| --- | --- | --- |
+| Windows host | Runs WSL2 and the KVM guests | `ssh cluster-win` |
+| Head node (WSL Ubuntu) | Login node, Slurm controller, every service | `ssh cluster` |
+| `cn01` … `cnNN` | Compute nodes | `ssh cn01` (as root), or through Slurm |
+
+---
+
+## Part 1 — Build it from scratch
+
+Allow about an hour, most of it package downloads. Do steps 1.1 to 1.3 once
+per machine.
+
+### 1.1 What you need
+
+| | Minimum | The lab this was built on |
+| --- | --- | --- |
+| CPU | x86-64 with VT-x/AMD-V turned on in the BIOS | 10 cores |
+| RAM | 16 GB (head node + 4 nodes × 2 GB) | 32 GB, WSL sees 15 GiB |
+| Disk | 60 GB free | 951 GB free |
+| OS | Windows 11 (nested virtualization in WSL2) | Windows 11 Home 25H2 |
+| Distribution | Ubuntu in WSL2 | Ubuntu 26.04 LTS |
+
+A native Ubuntu machine works too. Skip 1.2 and start at 1.3.
+
+### 1.2 Windows host
+
+Run these in an **elevated PowerShell**.
+
+**Install WSL2 and Ubuntu**, then reboot when asked:
+
+```powershell
+wsl --install -d Ubuntu
+```
+
+**Configure the WSL VM.** Create `%USERPROFILE%\.wslconfig`:
+
+```ini
+[general]
+instanceIdleTimeout=-1      # keep Ubuntu running when no terminal is open
+
+[wsl2]
+vmIdleTimeout=-1            # keep the WSL VM running too
+nestedVirtualization=true   # KVM inside WSL; the nodes are KVM guests
+```
+
+**Both idle timeouts are required.** Without `instanceIdleTimeout=-1`, WSL
+powers Ubuntu off about a minute after the last session closes, even with
+`vmIdleTimeout=-1` set. It takes the head node and every compute node with
+it. This was measured on the lab, not guessed.
+
+**Turn on the OpenSSH server**, so you can manage the lab from another
+machine:
+
+```powershell
+Get-WindowsCapability -Online -Name OpenSSH.Server* | Add-WindowsCapability -Online
+Set-Service sshd -StartupType Automatic
+Start-Service sshd
+```
+
+**Authorize your workstation's key.** If your Windows account is an
+administrator, OpenSSH reads `C:\ProgramData\ssh\administrators_authorized_keys`
+and **ignores** `~\.ssh\authorized_keys`. That is the most common reason a key
+is refused:
+
+```powershell
+# paste the contents of your workstation's ~/.ssh/id_ed25519.pub
+Add-Content C:\ProgramData\ssh\administrators_authorized_keys 'ssh-ed25519 AAAA... you@laptop'
+icacls C:\ProgramData\ssh\administrators_authorized_keys /inheritance:r /grant 'Administrators:F' /grant 'SYSTEM:F'
+```
+
+For a non-administrator account, use `%USERPROFILE%\.ssh\authorized_keys`.
+
+Apply the WSL settings with `wsl --shutdown`. The next `wsl` command starts
+WSL again with them.
+
+### 1.3 Inside WSL
+
+Open Ubuntu (`wsl -d Ubuntu`) and work there from now on.
+
+**Turn on systemd and passwordless sudo.** Every lab service is a systemd
+unit, and the harness configures networking and libvirt unattended:
+
+```sh
+printf '[boot]\nsystemd=true\n' | sudo tee /etc/wsl.conf
+echo "$USER ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/90-cluster-lab
+```
+
+Then run `wsl --shutdown` from Windows and open Ubuntu again.
+`systemctl is-system-running` should print `running` or `degraded`.
+
+**Install the packages:**
+
+```sh
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends \
+  libvirt-daemon-system libvirt-clients libvirt-daemon-driver-qemu \
+  qemu-system-x86 qemu-utils ovmf swtpm swtpm-tools \
+  bridge-utils iproute2 nftables dnsmasq dnsmasq-utils \
+  docker.io ansible-core ansible-lint python3-libvirt python3-lxml \
+  openssh-server netcat-openbsd git make jq curl yamllint shellcheck
+```
+
+**Get the host out of the cluster's way.** The stock dnsmasq and TFTP
+services would take the ports the lab's own DHCP and TFTP need. libvirt's
+default NAT network is a routed network, which the isolated segment must
+never have:
+
+```sh
+sudo systemctl disable --now dnsmasq.service tftpd-hpa.service 2>/dev/null || true
+sudo systemctl mask dnsmasq.service tftpd-hpa.service
+sudo systemctl enable --now libvirtd.socket docker.service ssh.service
+sudo virsh net-destroy default 2>/dev/null || true
+sudo virsh net-autostart --disable default 2>/dev/null || true
+sudo usermod -aG kvm,libvirt,docker "$USER"
+```
+
+Log out of WSL and back in, so the new groups apply. Then check:
+
+```sh
+ls -l /dev/kvm        # must exist; if not, recheck .wslconfig and the BIOS
+```
+
+[`docs/lab-host-setup.md`](docs/lab-host-setup.md) explains each of these
+choices.
+
+### 1.4 Get the code and configure it
+
+```sh
+mkdir -p ~/src && cd ~/src
+git clone https://github.com/dchau360/cluster-platform-wip.git
+cd cluster-platform-wip
+cp lab/local.env.example lab/local.env
+```
+
+Edit `lab/local.env`. Four values are yours, and every other default works
+as shipped:
+
+| Variable | Set it to | Used for |
+| --- | --- | --- |
+| `LAB_HOST_SSH` | `user@address` of the Windows host, as your workstation sees it | `make ssh-config` |
+| `LAB_LAN_CIDR` | your home network, for example a `/24` | proving the cluster cannot reach it |
+| `LAB_LAN_PROBE_IP` | an address on that network that answers ping, usually the router | the same proof |
+| `NODE_COUNT` | how many compute nodes to build, for example `4` | the default for `make demo` |
+
+Node size is `NODE_VCPUS`, `NODE_MEM_MB` and `NODE_DISK_GB`. The file
+documents every variable. `lab/local.env` is ignored by git, and CI fails if
+one of its values ever shows up in a tracked file.
+
+### 1.5 Bring the cluster up
+
+```sh
+make demo N=4
+```
+
+That one command, with no manual step in between:
+
+1. **`make up`**: checks the host, installs the systemd units, and creates
+   the isolated `br-prov` segment with its own DHCP and TFTP.
+2. **`make converge`**: runs `ansible/site.yml` to build the head node. It
+   starts NetBox and seeds it with N nodes, builds Warewulf, and imports the
+   node image from GHCR. It sets up Slurm with accounting, NFS, Prometheus,
+   Alertmanager and the git mirror.
+3. **`make nodes-up`**: defines N UEFI virtual machines and powers them on
+   over Redfish. Each PXE-boots, loads its image from Warewulf, and runs
+   `ansible-pull` to configure itself.
+4. **`make nodes-activate`**: each node runs burn-in (CPU, memory, disk), and
+   a gate on the head node decides whether it becomes `active`.
+5. **`make slurm-ready`**: waits for every node to register with Slurm, then
+   runs a job array with one task on every node.
+
+It ends with a table of how long each phase took on each node. The **first**
+run takes longer than later ones, because it builds Warewulf from source and
+downloads the NetBox containers and the node image. Later runs on this lab
+take about five minutes.
+
+### 1.6 Check it works
+
+```sh
+sinfo                       # every node idle in the `compute` partition
+make status                 # units, segment, VMs, DHCP leases
+make convergence-status     # each node's config commit, image tag, last run
+make verify-isolation       # proves the segment cannot reach your LAN
+```
+
+Expected `sinfo`:
+
+```text
+PARTITION AVAIL  TIMELIMIT  NODES  STATE NODELIST
+compute*     up   infinite      4   idle cn[01-04]
+```
+
+The cluster is ready. Everything from here on is how to use it.
+
+---
+
+## Part 2 — Connect from your workstation
+
+All of this is done once, from the head node (inside WSL).
+
+**Let your workstation's key in** to the head node, and as root to every
+compute node:
+
+```sh
+cd ~/src/cluster-platform-wip
+make authorize-key KEY='ssh-ed25519 AAAA... you@laptop'
+```
+
+**Get your SSH config:**
+
+```sh
+make -s ssh-config
+```
+
+Paste the printed block into `~/.ssh/config` **on your workstation**. It
+defines four hosts:
+
+| Host | What it is |
+| --- | --- |
+| `cluster-win` | the Windows host |
+| `cluster` | the head node, reached through Windows with `wsl -e nc`. Nothing on Windows needs port forwarding, and a WSL address that changes on restart never appears anywhere |
+| `cluster-tunnel` | the head node again, forwarding the web UIs to your `localhost` |
+| `cn??` | every compute node, as root, jumping through the head node |
+
+From your workstation:
+
+```sh
+ssh cluster                 # the head node
+ssh cn01                    # root on a compute node
+ssh -N cluster-tunnel       # leave running, then open the URLs below
+```
+
+| Service | URL (with the tunnel up) | Login |
+| --- | --- | --- |
+| NetBox: inventory, IPAM, each node's facts and burn-in | http://localhost:8000 | on the head node: `sudo grep -E '^SUPERUSER_(NAME\|PASSWORD)=' /etc/cluster-lab/netbox.env` |
+| Prometheus: node and Slurm metrics, alert rules | http://localhost:9090 | none |
+| Alertmanager: firing alerts, silences | http://localhost:9093 | none |
+
+These services listen only on the head node's loopback. The tunnel is the
+only way to reach them, and they are never exposed on your LAN.
+
+---
+
+## Part 3 — Use it
+
+Log in to the head node (`ssh cluster`). It is the login node: you submit
+work there and Slurm runs it on the compute nodes.
+
+### Who you are
+
+| Account | Where | Use it for |
+| --- | --- | --- |
+| your own login | head node | running `make` targets and admin commands with `sudo` |
+| `hpc` | every machine, uid 2000, home on shared `/home` | running jobs. It is in the Slurm account, and can SSH between any two machines without a password, which is what MPI needs |
+| `root` | compute nodes | looking around and debugging. Not for changing anything; see below |
+
+Become the job user:
+
+```sh
+sudo -iu hpc
+```
+
+To add more job users, add them to `cluster_job_users` in
+`ansible/group_vars/all.yml` and run `make converge`.
+
+### Run jobs
+
+```sh
+sinfo                                   # partitions and node states
+srun -N4 hostname                       # one task on each of 4 nodes
+srun -w cn02 --pty bash                 # interactive shell on cn02, inside a job
+salloc -N2                              # hold 2 nodes; srun inside uses them
+```
+
+A batch job. Save this as `~/hello.sbatch`:
+
+```sh
+#!/bin/bash
+#SBATCH --job-name=hello
+#SBATCH --nodes=4
+#SBATCH --ntasks-per-node=1
+#SBATCH --time=00:05:00
+#SBATCH --output=%x-%j.out
+srun hostname
+```
+
+```sh
+sbatch ~/hello.sbatch       # prints the job id
+squeue                      # pending and running jobs
+cat hello-<jobid>.out       # output lands in your shared home
+scancel <jobid>             # cancel
+```
+
+**An MPI job.** Open MPI is in the node image. It is not on your `PATH` by
+default, which is normal on Rocky Linux, so load its module first:
+
+```sh
+#!/bin/bash
+#SBATCH --job-name=mpi-hello
+#SBATCH --nodes=4
+#SBATCH --ntasks-per-node=2
+#SBATCH --output=%x-%j.out
+source /etc/profile.d/modules.sh
+module load mpi/openmpi-x86_64
+mpirun hostname
+```
+
+**Accounting.** Every job is recorded in `slurmdbd`:
+
+```sh
+sacct                                                   # your jobs today
+sacct -a -S now-1day -X -o JobID,User,NodeList,Elapsed,State,ExitCode
+sreport cluster utilization start=now-7days
+```
+
+### Files
+
+| Path | Shared how | Put here |
+| --- | --- | --- |
+| `/home/<user>` | NFS from the head node, read-write everywhere | job scripts, input, output |
+| `/opt/software` | NFS, read-write on the head node, **read-only** on nodes | software every node should see |
+| `/tmp` and everything else on a node | local, **erased on reboot** | scratch only |
+
+Copy data in from your workstation with `scp data.tar cluster:`, then move
+it into the job user's home:
+
+```sh
+sudo install -o hpc -g hpc data.tar /home/hpc/
+```
+
+### Install software
+
+Compute nodes are **stateless** and have **no internet**. `dnf install` on a
+node has no repository to reach, and anything changed by hand is gone at the
+next reboot. Software goes in one of two places:
+
+**1. User software: `/opt/software` on the head node.** Every node mounts
+it, so anything installed there is on every node at once. It is
+group-writable by `hpc`.
+
+One rule matters: **the head node is Ubuntu and the nodes are Rocky 9.** A
+plain `python3 -m venv` made on the head node does not work on the nodes. It
+points at the head node's Python 3.14, and the nodes have 3.9. Software in
+`/opt/software` has to bring its own runtime, or be built for Rocky 9.
+
+*Python and scientific stacks: use conda (micromamba).* Each environment
+carries its own interpreter and libraries, so it runs the same on both
+systems:
+
+```sh
+sudo -iu hpc
+mkdir -p /opt/software/bin
+curl -fsSL https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xj -C /opt/software bin/micromamba
+export MAMBA_ROOT_PREFIX=/opt/software/conda
+/opt/software/bin/micromamba create -y -p /opt/software/envs/sci -c conda-forge python=3.12 numpy
+srun -N4 /opt/software/envs/sci/bin/python -c 'import numpy, socket; print(socket.gethostname(), numpy.__version__)'
+```
+
+*Compiled code: build it for Rocky 9 in a container on the head node.* The
+output runs on the nodes unchanged:
+
+```sh
+sudo docker run --rm -v /opt/software:/opt/software rockylinux/rockylinux:9 bash -c '
+  dnf -y install gcc make &&
+  gcc -O2 -o /opt/software/bin/myprog /opt/software/src/myprog.c'
+sudo -iu hpc srun -N4 /opt/software/bin/myprog
+```
+
+Use the same pattern for Spack or `make install` with
+`--prefix=/opt/software/<name>`. Static binaries, such as most Go and Rust
+release downloads, work as they are.
+
+**2. System packages and drivers: the node image.** Add the package to
+[`cluster-images-wip`](https://github.com/dchau360/cluster-images-wip), then
+roll the new image out. See [Change the node image](#change-the-node-image).
+This is the only kind of change that survives a reboot and is identical on
+every node.
+
+### Log in to a node directly
+
+```sh
+ssh cn01                # from your workstation, as root
+sudo ssh cn01           # from the head node, as root
+ssh cn01                # from the head node, as hpc
+```
+
+Use a login to look, not to change. Nodes configure themselves from git
+every 15 minutes and at every boot, so a change made by hand is undone. Make
+the change in an Ansible role and promote it (see
+[Change node configuration](#change-node-configuration)).
+
+---
+
+## Part 4 — Run it day to day
+
+Run everything here on the head node, in `~/src/cluster-platform-wip`.
+`make help` lists every target.
+
+### Start and stop
+
+| You want to | Run |
+| --- | --- |
+| Bring everything up, or check it is all up (safe to repeat) | `make demo N=4` |
+| Start only the platform, no nodes | `make up && make converge` |
+| Start the nodes | `make nodes-up` |
+| Stop the nodes, keep their disks | `make nodes-down` |
+| Stop the nodes and the segment | `make down` |
+| Stop everything and keep it off after a reboot | `make down-hard` |
+| See what is running | `make status` |
+
+**After a Windows reboot**, the head node's services come back by themselves:
+they are systemd units enabled at boot. The compute nodes stay off until you
+start them. Run `make demo N=4`: it skips everything already in place and
+boots the nodes. To have WSL start at logon without anyone opening a
+terminal, run this once in an elevated PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File \\wsl$\Ubuntu\home\<you>\src\cluster-platform-wip\scripts\windows\install-autostart.ps1
+```
+
+### Add, remove and rebuild nodes
+
+| You want to | Run |
+| --- | --- |
+| Grow the lab to 6 VMs | `make demo N=6`. Set `NODE_COUNT=6` in `lab/local.env` to make it the default |
+| Add a physical machine | Create it in NetBox (site `lab`, role `Compute`, its PXE NIC's real MAC as primary MAC), run `make converge`, then PXE-boot it. It discovers itself and arrives `staged`; `make nodes-activate` burns it in |
+| Take a node out of service | `make drain NODES=cn03`, and `make resume NODES=cn03` to bring it back |
+| Rebuild one node from bare metal; its neighbours keep running | `make drill-reprovision` |
+| Power a node off, on, or cycle it | `bash scripts/redfish.sh power cn02 off\|on\|cycle` |
+| Watch a node's console | `sudo virsh -c qemu:///system console cn02` (leave with `Ctrl+]`), or `$LAB_VM_DIR/console/cn02.log` |
+
+Nothing is edited per node: NetBox is the input, and DHCP, Warewulf and
+`slurm.conf` are rendered from it. See
+[Add a machine](docs/operations.md#add-a-machine).
+
+### Change the node image
+
+Images are built by GitHub Actions in `cluster-images-wip` and published as
+immutable `sha-<commit>` tags. They are never edited on the server.
+
+```sh
+# 1. in cluster-images-wip: add a line to images/compute-base/packages.txt,
+#    open a PR, merge. The Actions run summary prints the new tag.
+# 2. on the head node:
+make rolling-update TAG=sha-<new>     # one node at a time: drain, reboot, check, resume
+make rollback TAG=sha-<previous>      # if you need to go back
+sudo wwctl image list                 # what is imported
+```
+
+A rolling update stops on the first node that fails its health check, and
+puts that node back on the old image.
+
+### Change node configuration
+
+Node configuration is the Ansible in this repository. Nodes pull a pinned
+`deployed` ref, never `main`, so a merge changes nothing until you release it.
+Releasing pushes that ref to GitHub, and only after CI passed on the commit,
+so it needs `gh auth login` on the head node with push rights to the repo:
+
+```sh
+git pull                              # after your PR is merged
+make promote SHA=$(git rev-parse HEAD)   # nodes converge within 15 minutes, or at next boot
+make convergence-status               # every node on the new commit?
+make promote SHA=<previous>           # roll back
+```
+
+Head-node changes (Slurm controller, NetBox, Prometheus) apply with
+`make converge`. `slurm.conf` is rendered from NetBox; after a NetBox change,
+run `make reconfigure`.
+
+### Alerts
+
+Prometheus alerts on a node down, a stale or failed config pull, a failed
+burn-in, `slurmctld` down, and a Slurm node unavailable. In the lab, alerts
+go to the journal:
+
+```sh
+sudo journalctl -u cluster-alert-webhook -f
+```
+
+To page a real person, swap the `lab-webhook` receiver for PagerDuty or Slack.
+There is a runbook per alert in
+[`docs/operations.md`](docs/operations.md#alerting-and-runbooks).
+
+### Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| `ssh cluster-win` says `Permission denied (publickey)` | Either Windows does not have your key (for an admin account it must be in `C:\ProgramData\ssh\administrators_authorized_keys`, see [1.2](#12-windows-host)), or your key has a passphrase and nothing can unlock it. `ssh -v cluster-win` shows `Server accepts key` followed by a denial in the second case. On macOS, run `ssh-add --apple-use-keychain ~/.ssh/id_ed25519` once and add `UseKeychain yes` to `~/.ssh/config` |
+| `ssh cluster` says `Permission denied` but `ssh cluster-win` works | The head node does not have your key. `make authorize-key KEY='...'` on the head node ([Part 2](#part-2--connect-from-your-workstation)) |
+| `ssh cn01` refused but `ssh cluster` works | Your key is not in root's keys yet. Run `make authorize-key` again; nodes pick up the change within about a minute |
+| `ssh cluster` hangs or `nc` errors | WSL is stopped or starting. `ssh cluster-win wsl -d Ubuntu -e true` starts it |
+| The whole cluster is off every time you come back | WSL is stopping when idle. Set both timeouts in `.wslconfig` ([1.2](#12-windows-host)), then `wsl --shutdown` |
+| `sinfo` shows `unk*` or `down*` | The nodes are off. `make nodes-up`, or `make demo N=4` |
+| A node stays `drain` | `sinfo -R` gives the reason. Fix it, then `make resume NODES=<node>` |
+| `sudo ssh cn01`: `Connection refused` | The node has not finished its first config pull. `make convergence-status`; the console log is `$LAB_VM_DIR/console/cn01.log` |
+| `ssh cn01`: `Connection reset by peer` or `Connection closed`, while other nodes work | The node's sshd is penalising the head node after failed logins (OpenSSH 9.8+). The `node_sshd` role exempts the head node; a node still on an older config clears itself within 10 minutes if you stop retrying. `sudo srun -w cn01 journalctl -u sshd -n 20` shows `penalty:` lines |
+| `sudo ssh cn01`: `Could not resolve hostname` | `make converge` re-renders `/etc/hosts` from NetBox |
+| A job is stuck pending | `squeue -l` gives the reason; `scontrol show job <id>` gives the detail |
+| A node failed burn-in | NetBox: the device's `burnin_results` custom field. Then [BurnInFailed](docs/operations.md#burninfailed) |
+| `make convergence-status` prints a JSON error | NetBox is still starting (it takes about a minute after a cold start). Retry |
+
+More, including every endpoint and port, is in
+[`docs/operations.md`](docs/operations.md).
+
+---
+
+## About this project
+
 **One command takes powered-off machines to an HPC cluster that runs a job on
 every node.** No manual step anywhere in the middle: UEFI PXE boot, node images
 served over the network, NetBox as the source of truth, nodes that configure
@@ -12,7 +573,7 @@ command runs at any node count, because nothing in this repository knows one.
 make demo N=4     # powered-off guests -> a Slurm cluster that has taken work
 ```
 
-## Watch the demo
+### Watch the demo
 
 The live two-node run is committed as an asciinema cast, so a reader can
 replay the real thing without downloading a video:
@@ -30,7 +591,7 @@ replay the real thing without downloading a video:
 
 There is no narrated video; the captions are the narration.
 
-## The problem this solves
+### The problem this solves
 
 Between a powered-off server and a compute node running someone's job there
 is a pipeline most people never see: firmware, a DHCP offer, a TFTP fetch, an
@@ -44,7 +605,7 @@ It is the **platform**: the network, the provisioning services, the automation
 and the measurement harness. The node images are built and published by
 [`cluster-images-wip`](https://github.com/dchau360/cluster-images-wip).
 
-## What it proves, and what proves it
+### What it proves, and what proves it
 
 | Claim | Command | Evidence |
 | --- | --- | --- |
@@ -61,7 +622,7 @@ and the measurement harness. The node images are built and published by
 | Cold-start recovery after the host restarts | `make cold-start-check` | every lab service is a systemd unit enabled at boot, and the drill proves the lab returns |
 | No secret and no host value in git | `make lint` | `gitleaks` over the worktree and the full history, plus a host-value gate — [repository rules](#repository-rules) |
 
-## The numbers
+### The numbers
 
 Measured on the lab host on 2026-10-13, platform `5ab1a81`, node image
 `sha-baa648ba99c8`. Full tables in [`docs/measurements.md`](docs/measurements.md#results).
@@ -81,7 +642,7 @@ leaked into a per-run step. The phase that bends is the image and overlay fetch
 (`overlay`: 6.80 s at one node, 7.44 s at two, 11.24–11.87 s at four), and that
 is the phase the scale argument is built on.
 
-## What this does not prove
+### What this does not prove
 
 Three gaps, disclosed on purpose. A gap that is named is a design decision; a
 gap the reader finds is a credibility failure.
@@ -108,7 +669,7 @@ The full gap list — what is **built**, what is designed and what has not
 started, with the fix and the rough cost for each — is
 [`docs/production-readiness.md`](docs/production-readiness.md).
 
-## How it works
+### How it works
 
 Every box is a real path in this repository or in `cluster-images-wip`. If a
 box has no path, it is not part of the system. The boot-path diagram and the
@@ -175,7 +736,7 @@ segment**; each **node** pulls its own configuration from that segment and
 reports back; and the only thing crossing in from the public internet is a
 node image from a public registry, fetched with no credential.
 
-## Start here
+### Start here
 
 In the order a stranger should read them:
 
@@ -215,22 +776,11 @@ Also: [`docs/operations.md`](docs/operations.md),
 > This repository is **public**. Every commit is world-readable forever.
 > Read [Repository rules](#repository-rules) before your first commit.
 
-## Quick start
+### Quick start
 
-```sh
-cp lab/local.env.example lab/local.env   # fill in the host-specific values
-make up                                  # bring the platform up, idempotent
-make demo N=2                             # 2 nodes, power-off to Slurm-ready
-make demo N=4                             # same code, 4 nodes
-make acceptance                           # the whole curve, then every drill
-make down                                 # stop the lab
-```
+See [Part 1](#part-1--build-it-from-scratch). `make help` lists every target.
 
-`make help` lists everything. [`docs/lab-host-setup.md`](docs/lab-host-setup.md)
-is what the host needs, and why. [`docs/operations.md`](docs/operations.md) is
-how to check the lab, open the NetBox inventory, and add or replace a machine.
-
-## What is here
+### What is here
 
 | Working now | Where |
 | --- | --- |
@@ -251,7 +801,7 @@ how to check the lab, open the NetBox inventory, and add or replace a machine.
 | Per-phase, per-node timing, NDJSON plus CSV | `scripts/lib/timing.sh` |
 | Every lab service a systemd unit enabled at boot | `systemd/` |
 
-## Structure
+### Structure
 
 ```text
 Makefile                      up / down / demo N=<n>, and every gate
@@ -313,7 +863,7 @@ docs/
   operations.md               status, NetBox inventory, add or replace a node
 ```
 
-## Design decisions worth knowing
+### Design decisions worth knowing
 
 **The provisioning segment has no uplink.** `br-prov` is a Linux bridge
 with no port except node taps. There is no path to the home LAN by
@@ -357,7 +907,7 @@ with it.
 on a literal `NODE_COUNT` assignment, a literal loop bound, or a hardcoded
 node-name list.
 
-## Repository rules
+### Repository rules
 
 Non-negotiable. CI enforces all but the last.
 
@@ -387,6 +937,6 @@ make lint          # host values, gitleaks, yamllint, ansible-lint, shellcheck
 make verify        # isolation and idempotency, on the lab host
 ```
 
-## Licence
+### Licence
 
 MIT — see [LICENSE](LICENSE).

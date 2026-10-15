@@ -9,3 +9,7 @@ node_sshd_port: 22
 # 00- so it sorts ahead of the distribution's 50-redhat.conf: sshd keeps the
 # first value it reads for a keyword, so the earliest drop-in wins.
 node_sshd_dropin: /etc/ssh/sshd_config.d/00-cluster-lab.conf
+# Addresses sshd never penalises for a failed or slow login: the head node,
+# which every connection to a node comes through. See tasks/main.yml.
+node_sshd_penalty_exempt:
+  - "{{ node_facts.controller.address }}"

@@ -14,6 +14,8 @@ export LAB_SCRIPT_NAME=authorize-key
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "$HERE/lib/common.sh"
+lab_load_env
+counters_init
 
 KEY="${KEY:-}"
 [[ -n "$KEY" ]] || die "usage: make authorize-key KEY='ssh-ed25519 AAAA... comment'"
@@ -38,3 +40,4 @@ add_key "$HOME/.ssh/authorized_keys" "$(id -un)"
 add_key /root/.ssh/authorized_keys root sudo
 sudo wwctl overlay build >/dev/null
 ok "node overlays rebuilt; nodes accept the key as root"
+counters_report
