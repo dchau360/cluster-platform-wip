@@ -2,6 +2,11 @@
 #
 # Bring up the isolated provisioning segment.
 #
+# Creates the subnet as well as the bridge: PROV_SUBNET in lab/local.env may
+# name any private network nothing on this host uses yet. The head node takes
+# the first address on it as the gateway, which is the only link between the
+# segment and the host.
+#
 # The segment is a Linux bridge with NO uplink port. Nothing is ever enslaved
 # to it except node taps, so there is no path to the home LAN by construction.
 # Three further measures make that an enforced property rather than a habit:
@@ -19,6 +24,34 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 lab_load_env
 
 NFT_TABLE=cluster_lab
+
+# --- subnet ----------------------------------------------------------------
+
+# The segment's subnet is PROV_SUBNET from lab/local.env, or the definition's
+# default. It only has to be unused: this script creates it. So refuse one
+# the host already reaches some other way — a route on another interface, a
+# Docker network, or the home LAN — because the bridge would then shadow that
+# network, or be shadowed by it, and the failure would look like a dead node.
+in_use() {
+  ip -4 -o route show | awk -v bridge="$PROV_BRIDGE" '
+    $1 != "default" {
+      for (i = 2; i < NF; i++) if ($i == "dev") dev = $(i + 1)
+      if (dev != bridge) print dev, $1
+    }'
+  [[ -z "${LAB_LAN_CIDR:-}" ]] || echo "home-LAN(LAB_LAN_CIDR) $LAB_LAN_CIDR"
+  if command -v docker >/dev/null 2>&1; then
+    local networks=()
+    mapfile -t networks < <(sudo docker network ls -q 2>/dev/null || true)
+    (( ${#networks[@]} == 0 )) || sudo docker network inspect \
+      -f '{{range .IPAM.Config}}docker:{{$.Name}} {{.Subnet}}{{"\n"}}{{end}}' \
+      "${networks[@]}" 2>/dev/null || true
+  fi
+}
+if clashes="$(in_use | python3 "$REPO_ROOT/netbox/address_plan.py" conflicts)"; then
+  ok "subnet $PROV_CIDR is not used anywhere else on this host"
+else
+  die "subnet $PROV_CIDR is already in use here: $(printf '%s' "$clashes" | paste -sd, - | sed 's/,/, /g'). Set PROV_SUBNET in lab/local.env to an unused private /${PROV_PREFIX} or larger."
+fi
 
 # --- bridge ----------------------------------------------------------------
 
