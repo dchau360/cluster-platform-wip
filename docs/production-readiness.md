@@ -779,9 +779,8 @@ items and should start early even though they finish last; 5.2 central logs,
 
 The aggregate is a quarter of work for one strong engineer with hardware
 access, longer without it. The line that matters is not the total: it is that
-**every item above is a named gap with a fix and a cost**, which is what a
-hiring manager is actually asking for when they ask whether a lab would
-survive production.
+**every item above is a named gap with a fix and a cost**, so the work to
+take this lab to production can be planned rather than discovered.
 
 ## Read next
 
@@ -792,5 +791,3 @@ survive production.
 * [`operations.md`](operations.md) — the runbooks the alerts already link to.
 * [`redfish.md`](redfish.md) and [`rdma-soft-roce.md`](rdma-soft-roce.md) —
   what the hardware emulation does and does not prove.
-* [`case-study.md`](case-study.md) — the project in first person, including
-  which of these gaps I would have designed for on day one.

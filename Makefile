@@ -30,7 +30,6 @@ export N
         redfish redfish-demo converge rollback drill-nic-swap drill-reprovision \
         drill-cold-start \
         acceptance nodes-activate slurm-ready rdma-test \
-        record-demo record-timings \
         check-host-values check-env-example lint lint-yaml lint-ansible lint-shell secrets \
         tracked-secrets git-identity cold-start-check
 
@@ -144,14 +143,6 @@ redfish-demo: ## Power-cycle the first node and flip its boot order over Redfish
 timings: ## Timing table for the most recent run. RUNID=<run-id> for a stored one
 	@$(RUN) -c 'source $(S)/lib/common.sh; lab_load_env; source $(S)/lib/timing.sh; \
 	  timing_report $${RUNID:+"$$LAB_TIMING_DIR/$(RUNID).ndjson"}'
-
-# --- the demo package (docs/demo) ------------------------------------------
-
-record-demo: ## Record `make demo N=<n>` to a committable asciinema cast
-	@$(RUN) $(S)/record-demo.sh demo $(N)
-
-record-timings: ## Record a stored run's timing table to a cast. RUNID=<run-id>
-	@$(RUN) $(S)/record-demo.sh timings $(RUNID)
 
 # --- gates -----------------------------------------------------------------
 

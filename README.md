@@ -16,8 +16,8 @@ This README is the operator's manual. It covers the whole path, in order:
 4. **[Run it day to day](#part-4--run-it-day-to-day)**: start and stop it, add
    nodes, change the node image, alerts, troubleshooting.
 
-What the project proves, how it is measured, and the design behind it are in
-**[About this project](#about-this-project)**, further down.
+How it works, how to verify it, and the full documentation index are in
+**[Reference](#reference)**, further down.
 
 > This repository is **public**. Never commit an address, username or MAC from
 > your own network, or any key. `lab/local.env` holds those values and is not
@@ -559,120 +559,16 @@ More, including every endpoint and port, is in
 
 ---
 
-## About this project
+## Reference
 
-**One command takes powered-off machines to an HPC cluster that runs a job on
-every node.** No manual step anywhere in the middle: UEFI PXE boot, node images
-served over the network, NetBox as the source of truth, nodes that configure
-themselves, a hardware acceptance gate, and Slurm on top.
-
-At four nodes that is **286 seconds end to end, measured** — and the same
-command runs at any node count, because nothing in this repository knows one.
-
-```sh
-make demo N=4     # powered-off guests -> a Slurm cluster that has taken work
-```
-
-### Watch the demo
-
-The live two-node run is committed as an asciinema cast, so a reader can
-replay the real thing without downloading a video:
-
-- [`docs/demo/make-demo-n2.cast`](docs/demo/make-demo-n2.cast) — the live
-  `make demo N=2` (1:35). Read it as
-  [`make-demo-n2.txt`](docs/demo/make-demo-n2.txt) if you would rather not
-  install a player.
-- [`docs/demo/timings-20261013T000455Z-686422.cast`](docs/demo/timings-20261013T000455Z-686422.cast)
-  — the stored `N=4` timing table, reprinted.
-- [`docs/demo/narration.md`](docs/demo/narration.md) — the five-minute
-  narration, with closed captions in
-  [`narration.srt`](docs/demo/narration.srt) and
-  [`narration.vtt`](docs/demo/narration.vtt).
-
-There is no narrated video; the captions are the narration.
-
-### The problem this solves
-
-Between a powered-off server and a compute node running someone's job there
-is a pipeline most people never see: firmware, a DHCP offer, a TFTP fetch, an
-iPXE script, a kernel and an initramfs, a root filesystem that arrives over
-the network, an identity that must come from somewhere other than the image,
-and a scheduler that has to be told the node exists.
-
-This repository builds that pipeline, on one workstation, with every phase
-timed per node so the cost of each step is a number rather than an opinion.
-It is the **platform**: the network, the provisioning services, the automation
-and the measurement harness. The node images are built and published by
-[`cluster-images-wip`](https://github.com/dchau360/cluster-images-wip).
-
-### What it proves, and what proves it
-
-| Claim | Command | Evidence |
-| --- | --- | --- |
-| Powered-off to a cluster that takes work, no manual step | `make demo N=<n>` | `sinfo` idle, a job array with one task per node, all `COMPLETED 0:0` — [console output](docs/acceptance-drills.md#measured-results) |
-| The same code at any node count | `make demo N=<a>` / `N=<b>` | per-phase tables at `N=1`, `2` and `4` — [the curve](docs/measurements.md#results) |
-| Idempotent: a second run changes nothing | `make verify-idempotent` | head converge `ok=119 changed=0`, node pull `ok=38 changed=0`; the build fails otherwise |
-| The provisioning segment cannot reach the home LAN | `make verify-isolation` | proven from inside the segment, in a namespace configured as a node — [design](docs/network-isolation.md) |
-| A degraded node never joins the cluster | `make burnin-gate` | a disk throttled to 4 MiB/s against a 20 MiB/s floor was set `failed` — [drill](docs/acceptance-drills.md#the-burn-in-gate-holds-a-deliberately-failed-node) |
-| A real RDMA bandwidth number, no IB hardware | `make rdma-test` | `ib_write_bw` 396.21 MB/s, `ib_send_bw` 480.11 MB/s over `rdma_rxe`; `iperf3` 64.3 Gbit/s on the same link |
-| One node re-provisions while its neighbours keep running | `make drill-reprovision` | every neighbour's domain id unchanged and its QEMU CPU time still growing |
-| Identity survives a NIC swap | `make drill-nic-swap` | hostname and NetBox device unchanged, MAC changed |
-| Image rollback, and rollout that rolls itself back | `make rollback TAG=sha-<previous>` | the booted node reports the older tag; a rollout to a broken image stopped itself after one node |
-| Configuration rollback in one ref move | `make promote SHA=<previous>` | **2.95 s measured**; every node converged on the commit the ref names |
-| Cold-start recovery after the host restarts | `make cold-start-check` | every lab service is a systemd unit enabled at boot, and the drill proves the lab returns |
-| No secret and no host value in git | `make lint` | `gitleaks` over the worktree and the full history, plus a host-value gate — [repository rules](#repository-rules) |
-
-### The numbers
-
-Measured on the lab host on 2026-10-13, platform `5ab1a81`, node image
-`sha-baa648ba99c8`. Full tables in [`docs/measurements.md`](docs/measurements.md#results).
-
-| | N=1 | N=2 | N=4 | Grows with N? |
-| --- | --- | --- | --- | --- |
-| `platform-up` | 0.225 s | 0.211 s | 0.211 s | no |
-| `converge` (head node) | 47.740 s | 47.415 s | 50.050 s | no |
-| `nodes-up` (the boot loop) | 28.135 s | 29.342 s | 34.509 s | slightly |
-| `nodes-activate` (burn-in, gate, promotion reboot) | 95.482 s | 126.176 s | 189.203 s | **yes, linear** |
-| `slurm-ready` | 12.144 s | 12.150 s | 12.178 s | no |
-| **wall clock** | **183.8 s** | **215.3 s** | **286.2 s** | |
-
-The interesting result is not how long one node takes. It is **which phases
-stay flat**: `converge` does not move, which is the check that no per-node work
-leaked into a per-run step. The phase that bends is the image and overlay fetch
-(`overlay`: 6.80 s at one node, 7.44 s at two, 11.24–11.87 s at four), and that
-is the phase the scale argument is built on.
-
-### What this does not prove
-
-Three gaps, disclosed on purpose. A gap that is named is a design decision; a
-gap the reader finds is a credibility failure.
-
-- **No InfiniBand hardware, and never any.** The GUID discovery and the DHCP
-  option-61 client-id reservations are real code, exercised only against
-  synthetic GUID data. The RDMA numbers above are Soft-RoCE over Ethernet —
-  a genuine verbs data path and an unreal fabric, with no subnet manager.
-  See [`docs/ib-and-dhcp-option61.md`](docs/ib-and-dhcp-option61.md) and
-  [`docs/rdma-soft-roce.md`](docs/rdma-soft-roce.md).
-- **No real BMC.** `sushy-emulator` gives real power on/off/cycle and real
-  persistent boot-order changes — the path OpenStack Ironic uses in its own
-  CI. It does **not** give vendor BIOS attributes: the pending/applied two-step,
-  `@Redfish.Settings` semantics, or attribute names that change spelling
-  between firmware releases. See [`docs/redfish.md`](docs/redfish.md).
-- **Nothing above four nodes.** One workstation fits a handful of guests. The
-  DHCP and image-pull stampede at 100 nodes is **arithmetic over a measured
-  per-node cost**, not an observation, and it is labelled that way wherever it
-  appears. Where it breaks — starting with an address plan that fails at node
-  81, not with throughput — is in
-  [`docs/scale-analysis.md`](docs/scale-analysis.md).
-
-The full gap list — what is **built**, what is designed and what has not
-started, with the fix and the rough cost for each — is
-[`docs/production-readiness.md`](docs/production-readiness.md).
+Background for operating and changing the cluster: how the pieces fit, how to
+prove it still works, what it measured, and where it stops. `make help` lists
+every target.
 
 ### How it works
 
-Every box is a real path in this repository or in `cluster-images-wip`. If a
-box has no path, it is not part of the system. The boot-path diagram and the
+Every box names the path in this repository (or in `cluster-images-wip`)
+that builds it. The boot-path diagram and the
 rest of the detail are in [`docs/architecture.md`](docs/architecture.md).
 
 ```mermaid
@@ -736,49 +632,107 @@ segment**; each **node** pulls its own configuration from that segment and
 reports back; and the only thing crossing in from the public internet is a
 node image from a public registry, fetched with no credential.
 
-### Start here
+### Verify it
 
-In the order a stranger should read them:
+Each row is a check you can run on the lab host after a change. The evidence
+column is the result of the last recorded run.
 
-1. [`docs/case-study.md`](docs/case-study.md) — the whole project in first
-   person: the problem, the decisions, the numbers, the bugs that taught the
-   most, and what would be done differently.
-2. [`docs/tradeoffs.md`](docs/tradeoffs.md) — the three decisions that shaped
-   it, each with the option **not** taken and what that option is genuinely
-   better at: the four-node scale analysis, the image-versus-Ansible split, and
-   the pull-versus-push split.
-3. [`docs/architecture.md`](docs/architecture.md) — the diagrams, the boot
-   path phase by phase, where configuration comes from, where state lives.
-4. [`docs/measurements.md`](docs/measurements.md) — the 1-to-N curve, every
-   phase, per node, including a measurement that was wrong and how it was
-   caught.
-5. [`docs/scale-analysis.md`](docs/scale-analysis.md) — four named failure
-   modes at 100 nodes, labelled measured or projected, and the order to fix
-   them in.
-6. [`docs/production-readiness.md`](docs/production-readiness.md) — every gap
-   between this lab and production, with its fix, rough effort, status and the
-   order to close them in. What is built links to its merged pull request and
-   its drill; nothing claims to be built that is not.
-7. [`docs/node-self-configuration.md`](docs/node-self-configuration.md) — the
-   pull design, the four jobs a node cannot do for itself, and the drills that
-   tested them.
-8. [`docs/acceptance-drills.md`](docs/acceptance-drills.md) — every drill with
-   its console output.
+| What it checks | Command | Evidence |
+| --- | --- | --- |
+| Powered-off to a cluster that takes work, no manual step | `make demo N=<n>` | `sinfo` idle, a job array with one task per node, all `COMPLETED 0:0` — [console output](docs/acceptance-drills.md#measured-results) |
+| The same code at any node count | `make demo N=<a>` / `N=<b>` | per-phase tables at `N=1`, `2` and `4` — [the curve](docs/measurements.md#results) |
+| Idempotent: a second run changes nothing | `make verify-idempotent` | head converge `ok=119 changed=0`, node pull `ok=38 changed=0`; the build fails otherwise |
+| The provisioning segment cannot reach the home LAN | `make verify-isolation` | proven from inside the segment, in a namespace configured as a node — [design](docs/network-isolation.md) |
+| A degraded node never joins the cluster | `make burnin-gate` | a disk throttled to 4 MiB/s against a 20 MiB/s floor was set `failed` — [drill](docs/acceptance-drills.md#the-burn-in-gate-holds-a-deliberately-failed-node) |
+| A real RDMA bandwidth number, no IB hardware | `make rdma-test` | `ib_write_bw` 396.21 MB/s, `ib_send_bw` 480.11 MB/s over `rdma_rxe`; `iperf3` 64.3 Gbit/s on the same link |
+| One node re-provisions while its neighbours keep running | `make drill-reprovision` | every neighbour's domain id unchanged and its QEMU CPU time still growing |
+| Identity survives a NIC swap | `make drill-nic-swap` | hostname and NetBox device unchanged, MAC changed |
+| Image rollback, and rollout that rolls itself back | `make rollback TAG=sha-<previous>` | the booted node reports the older tag; a rollout to a broken image stopped itself after one node |
+| Configuration rollback in one ref move | `make promote SHA=<previous>` | **2.95 s measured**; every node converged on the commit the ref names |
+| Cold-start recovery after the host restarts | `make cold-start-check` | every lab service is a systemd unit enabled at boot, and the drill proves the lab returns |
+| No secret and no host value in git | `make lint` | `gitleaks` over the worktree and the full history, plus a host-value gate — [repository rules](#repository-rules) |
 
-Also: [`docs/operations.md`](docs/operations.md),
-[`docs/network-isolation.md`](docs/network-isolation.md),
-[`docs/discovery.md`](docs/discovery.md),
-[`docs/redfish.md`](docs/redfish.md),
-[`docs/rdma-soft-roce.md`](docs/rdma-soft-roce.md),
-[`docs/ib-and-dhcp-option61.md`](docs/ib-and-dhcp-option61.md),
-[`docs/lab-host-setup.md`](docs/lab-host-setup.md).
+### Measured performance
 
-> This repository is **public**. Every commit is world-readable forever.
-> Read [Repository rules](#repository-rules) before your first commit.
+Measured on the lab host on 2026-10-13, platform `5ab1a81`, node image
+`sha-baa648ba99c8`. Full tables in [`docs/measurements.md`](docs/measurements.md#results).
 
-### Quick start
+| | N=1 | N=2 | N=4 | Grows with N? |
+| --- | --- | --- | --- | --- |
+| `platform-up` | 0.225 s | 0.211 s | 0.211 s | no |
+| `converge` (head node) | 47.740 s | 47.415 s | 50.050 s | no |
+| `nodes-up` (the boot loop) | 28.135 s | 29.342 s | 34.509 s | slightly |
+| `nodes-activate` (burn-in, gate, promotion reboot) | 95.482 s | 126.176 s | 189.203 s | **yes, linear** |
+| `slurm-ready` | 12.144 s | 12.150 s | 12.178 s | no |
+| **wall clock** | **183.8 s** | **215.3 s** | **286.2 s** | |
 
-See [Part 1](#part-1--build-it-from-scratch). `make help` lists every target.
+The interesting result is not how long one node takes. It is **which phases
+stay flat**: `converge` does not move, which is the check that no per-node work
+leaked into a per-run step. The phase that bends is the image and overlay fetch
+(`overlay`: 6.80 s at one node, 7.44 s at two, 11.24–11.87 s at four), and that
+is the phase the scale argument is built on.
+
+### Known limits
+
+What this lab cannot show, because it is one workstation with no real
+fabric and no real BMC.
+
+- **No InfiniBand hardware, and never any.** The GUID discovery and the DHCP
+  option-61 client-id reservations are real code, exercised only against
+  synthetic GUID data. The RDMA numbers above are Soft-RoCE over Ethernet —
+  a genuine verbs data path and an unreal fabric, with no subnet manager.
+  See [`docs/ib-and-dhcp-option61.md`](docs/ib-and-dhcp-option61.md) and
+  [`docs/rdma-soft-roce.md`](docs/rdma-soft-roce.md).
+- **No real BMC.** `sushy-emulator` gives real power on/off/cycle and real
+  persistent boot-order changes — the path OpenStack Ironic uses in its own
+  CI. It does **not** give vendor BIOS attributes: the pending/applied two-step,
+  `@Redfish.Settings` semantics, or attribute names that change spelling
+  between firmware releases. See [`docs/redfish.md`](docs/redfish.md).
+- **Nothing above four nodes.** One workstation fits a handful of guests. The
+  DHCP and image-pull stampede at 100 nodes is **arithmetic over a measured
+  per-node cost**, not an observation, and it is labelled that way wherever it
+  appears. Where it breaks — starting with an address plan that fails at node
+  81, not with throughput — is in
+  [`docs/scale-analysis.md`](docs/scale-analysis.md).
+
+The full gap list — what is **built**, what is designed and what has not
+started, with the fix and the rough cost for each — is
+[`docs/production-readiness.md`](docs/production-readiness.md).
+
+### Documentation
+
+For running the cluster:
+
+- [`docs/operations.md`](docs/operations.md): every endpoint and port, adding
+  or replacing a node, the day-2 plays, alerts and their runbooks.
+- [`docs/acceptance-drills.md`](docs/acceptance-drills.md): every drill, with
+  its console output. Run one when you want to prove a change did not break
+  re-provisioning, rollback or the burn-in gate.
+- [`docs/lab-host-setup.md`](docs/lab-host-setup.md): what the lab host needs,
+  and why.
+
+For understanding or changing it:
+
+- [`docs/architecture.md`](docs/architecture.md): the diagrams, the boot path
+  phase by phase, where configuration comes from, where state lives.
+- [`docs/node-self-configuration.md`](docs/node-self-configuration.md): the
+  pull design, and the four jobs the head node pushes.
+- [`docs/network-isolation.md`](docs/network-isolation.md),
+  [`docs/discovery.md`](docs/discovery.md),
+  [`docs/redfish.md`](docs/redfish.md),
+  [`docs/rdma-soft-roce.md`](docs/rdma-soft-roce.md),
+  [`docs/ib-and-dhcp-option61.md`](docs/ib-and-dhcp-option61.md): one
+  subsystem each.
+- [`docs/tradeoffs.md`](docs/tradeoffs.md): the three design decisions, each
+  with the option not taken.
+
+For growing it:
+
+- [`docs/measurements.md`](docs/measurements.md): the 1-to-N timing curve.
+- [`docs/scale-analysis.md`](docs/scale-analysis.md): where it breaks at 100
+  nodes, and the order to fix it in.
+- [`docs/production-readiness.md`](docs/production-readiness.md): every gap
+  between this lab and production, with its fix, effort and status.
 
 ### What is here
 
@@ -846,7 +800,6 @@ netbox/
 molecule/
   node_pull/                  the node play, converged in a container
 docs/
-  case-study.md               the project in first person
   tradeoffs.md                the three decisions, both sides of each
   architecture.md             the diagrams, and how the pieces fit
   measurements.md             the 1-to-N curve

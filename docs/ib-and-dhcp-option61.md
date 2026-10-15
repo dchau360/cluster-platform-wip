@@ -17,8 +17,8 @@ a machine that has an HCA:
   option-61 (client-identifier) reservation;
 - it is exercised by unit tests whose GUIDs are all synthetic.
 
-An interviewer who finds an undisclosed gap stops trusting everything else.
-This file exists so that gap is disclosed, not discovered.
+This file exists so that gap is written down where an operator will find it
+before relying on the code.
 
 ## What is measured, and what is assumed
 
