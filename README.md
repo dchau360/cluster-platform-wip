@@ -316,30 +316,50 @@ ssh -N cluster-tunnel       # leave running, then open the URLs below
 | Prometheus: node and Slurm metrics, alert rules | http://localhost:9090 | none |
 | Alertmanager: firing alerts, silences | http://localhost:9093 | none |
 
-These services are never exposed on your LAN. NetBox listens only on the
-head node's loopback, so the tunnel is the way to reach it.
+NetBox listens only on the head node's loopback, so the tunnel is the way to
+reach it from your workstation, unless you turn on the port forwards below.
 
-**Optional: reach every cluster address from your workstation.** `ssh cn01`
-covers SSH. To reach any port on any node by its address, for example
-`ssh root@10.44.0.20`, a node's `node_exporter` on `:9100`, or Prometheus at
-`http://10.44.0.1:9090`, run [sshuttle](https://github.com/sshuttle/sshuttle)
-on macOS or Linux:
+**Optional: reach the cluster from any device on your home network.** The SSH
+setup above needs an SSH client and the config block. To reach the cluster
+from any device on your LAN (a phone, another PC) with nothing to set up on
+it, turn on port forwards on the Windows host:
 
-```sh
-brew install sshuttle              # or: apt install sshuttle / pip install sshuttle
-sshuttle -r cluster 10.44.0.0/22   # your PROV_SUBNET; asks for your sudo password
-```
+1. On the head node, set `LAN_PORT_FORWARDS=yes` in `lab/local.env` and run
+   `make up`.
+2. `make lan-ports` prints a `powershell ... install-lan-ports.ps1 -Ports ...
+   -LanCidr ...` command. Run it once in an **elevated** PowerShell on the
+   Windows host. Run it again after `NODE_COUNT` changes.
 
-Leave it running; Ctrl-C closes it. It carries TCP to the cluster subnet over
-the same `ssh cluster` connection, so nothing on Windows, your router or the
-head node changes, and the head node needs nothing beyond the `python3` it
-already has. Two limits: it carries TCP only (no ping, no UDP), and
-NetBox still needs the tunnel because it is bound to loopback. Node names
-resolve only on the head node, so use addresses here, or `ssh cn01`.
+Then, with `<windows-host>` the Windows host's address on your LAN:
 
-A plain route to the cluster subnet through the Windows host does not work.
-WSL's NAT on Windows rewrites the source address of the cluster's replies, so
-your workstation discards them. That is why this goes over SSH instead.
+| From any device on your LAN | Reaches |
+| --- | --- |
+| `ssh -p 2200 <your login>@<windows-host>` | the head node |
+| `ssh -p 2201 root@<windows-host>` | cn01; `2202` is cn02, and so on |
+| http://&lt;windows-host&gt;:8000 | NetBox |
+| http://&lt;windows-host&gt;:9090 | Prometheus |
+| http://&lt;windows-host&gt;:9093 | Alertmanager |
+
+`LAN_SSH_PORT_BASE` moves the SSH ports. Node SSH still needs a key that
+`make authorize-key` has authorized.
+
+How it works: each port is relayed twice, by Windows (`netsh portproxy`) to
+its own `127.0.0.1`, which WSL carries into the head node, and by a
+`systemd-socket-proxyd` relay on the head node to the node or service. Nothing
+on Windows names a WSL address, so a WSL restart or a Windows reboot does not
+break it. Windows Firewall admits these ports from `LAB_LAN_CIDR` only, and the
+head node's relays listen on its loopback only.
+
+Know what this opens: anyone on your home network can reach these ports.
+NetBox asks for a login and SSH needs an authorized key, but Prometheus and
+Alertmanager have no login. To close it, set `LAN_PORT_FORWARDS=no`, run
+`make up`, and on Windows run `install-lan-ports.ps1 -Uninstall` (elevated).
+
+These are port forwards, not a route. Only the ports in the table are
+reachable, and a node's address such as `10.44.0.20` still is not. A route to
+the cluster subnet through the Windows host does not work: WSL's NAT on Windows
+rewrites the source address of the cluster's replies, so your device discards
+them. Each relay starts a new connection instead, so no reply crosses that NAT.
 
 ---
 

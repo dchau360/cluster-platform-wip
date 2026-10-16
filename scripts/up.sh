@@ -28,6 +28,9 @@ timed systemd-install "" -- bash "$HERE/systemd-install.sh"
 # and counted. The systemd unit runs the same script at boot.
 timed net "" -- bash "$HERE/net-up.sh"
 
+# Relays for LAN_PORT_FORWARDS, or their removal when it is off.
+timed lan-ports "" -- bash "$HERE/lan-ports.sh"
+
 # Mark the units active and enabled. Starting an already-active unit is a
 # no-op, so this costs nothing on a repeat run.
 phase_begin services
