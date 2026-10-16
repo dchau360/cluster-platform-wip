@@ -100,19 +100,10 @@ bool_setting() {
     *) die "$name must be yes or no, not '$value'" ;;
   esac
 }
-lan_access="$(bool_setting LAB_LAN_ACCESS no)"
 node_internet="$(bool_setting NODE_INTERNET_ACCESS no)"
 
-lan_clients=()
-if [[ "$lan_access" == yes ]]; then
-  [[ -n "${LAB_LAN_CIDR:-}" ]] || die "LAB_LAN_ACCESS=yes needs LAB_LAN_CIDR in lab/local.env"
-  lan_clients=("$LAB_LAN_CIDR")
-  wsl_gw="$(ip -4 route show default | awk '{ print $3; exit }')"
-  [[ -z "$wsl_gw" ]] || lan_clients+=("$wsl_gw/32")
-fi
-
 want_forwarding=0
-[[ "$lan_access" == yes || "$node_internet" == yes ]] && want_forwarding=1
+[[ "$node_internet" == yes ]] && want_forwarding=1
 for knob in forwarding rp_filter; do
   want=$want_forwarding; [[ "$knob" == rp_filter ]] && want=1
   path="/proc/sys/net/ipv4/conf/$PROV_BRIDGE/$knob"
@@ -125,31 +116,9 @@ for knob in forwarding rp_filter; do
   fi
 done
 
-lan_rules=""
-lan_forward=""
-if [[ "$lan_access" == yes ]]; then
-  clients="$(printf '%s, ' "${lan_clients[@]}")"; clients="${clients%, }"
-  read -r -d '' lan_rules <<EOF || true
-  set lan_clients {
-    type ipv4_addr; flags interval;
-    elements = { $clients }
-  }
-  chain input {
-    type filter hook input priority -10; policy accept;
-    iifname != "$PROV_BRIDGE" ip saddr @lan_clients ip daddr $PROV_CIDR tcp dport 22 accept
-    iifname != "$PROV_BRIDGE" ip saddr @lan_clients ip daddr $PROV_CIDR meta l4proto icmp accept
-    iifname != "$PROV_BRIDGE" ip saddr @lan_clients ip daddr $PROV_CIDR counter drop
-  }
-EOF
-  lan_forward="
-    oifname \"$PROV_BRIDGE\" iifname != \"$PROV_BRIDGE\" ip saddr @lan_clients counter accept
-    iifname \"$PROV_BRIDGE\" oifname != \"$PROV_BRIDGE\" ct state established,related counter accept"
-fi
-
 # Internet means public addresses only. A node may not open connections to
 # the home LAN, Windows, Docker or any other private range, so egress cannot
 # become a path around the isolation that keeps the lab off the home network.
-# Replies to LAN-initiated connections are established traffic and pass above.
 internet_forward=""
 if [[ "$node_internet" == yes ]]; then
   internet_forward="
@@ -159,10 +128,9 @@ if [[ "$node_internet" == yes ]]; then
 fi
 
 read -r -d '' NFT_BODY <<EOF || true
-$lan_rules
   chain forward {
     type filter hook forward priority -10; policy accept;
-$lan_forward$internet_forward
+$internet_forward
     iifname "$PROV_BRIDGE" oifname != "$PROV_BRIDGE" counter drop
     oifname "$PROV_BRIDGE" iifname != "$PROV_BRIDGE" counter drop
   }
@@ -171,11 +139,11 @@ EOF
 digest="$(printf '%s' "$NFT_BODY" | sha256sum | cut -c1-16)"
 current="$(sudo nft list table inet "$NFT_TABLE" 2>/dev/null || true)"
 if [[ "$current" == *"cluster-lab $digest"* ]]; then
-  ok "nftables table inet $NFT_TABLE (LAN: $lan_access, internet: $node_internet)"
+  ok "nftables table inet $NFT_TABLE (internet: $node_internet)"
 else
   sudo nft delete table inet "$NFT_TABLE" 2>/dev/null || true
   printf 'table inet %s {\n  comment "cluster-lab %s"\n%s\n}\n' "$NFT_TABLE" "$digest" "$NFT_BODY" | sudo nft -f -
-  changed "nftables table inet $NFT_TABLE installed (LAN: $lan_access, internet: $node_internet)"
+  changed "nftables table inet $NFT_TABLE installed (internet: $node_internet)"
 fi
 
 # NAT is separate from filtering. Masquerading lets replies return through the
@@ -227,17 +195,10 @@ else
 fi
 
 # Docker's iptables policy also needs explicit routed accepts. Keep these
-# comment-tagged so changing either flag removes stale rules idempotently.
+# comment-tagged so turning the flag off removes stale rules idempotently.
 want_routed=()
-if [[ "$lan_access" == yes ]]; then
-  for client in "${lan_clients[@]}"; do
-    want_routed+=("-A $chain -s $client -o $PROV_BRIDGE -m comment --comment cluster-lab-routed -j ACCEPT")
-  done
-fi
-if [[ "$lan_access" == yes || "$node_internet" == yes ]]; then
-  want_routed+=("-A $chain -o $PROV_BRIDGE -m conntrack --ctstate RELATED,ESTABLISHED -m comment --comment cluster-lab-routed -j ACCEPT")
-fi
 if [[ "$node_internet" == yes ]]; then
+  want_routed+=("-A $chain -o $PROV_BRIDGE -m conntrack --ctstate RELATED,ESTABLISHED -m comment --comment cluster-lab-routed -j ACCEPT")
   want_routed+=("-A $chain -s $PROV_CIDR -i $PROV_BRIDGE -m comment --comment cluster-lab-routed -j ACCEPT")
 fi
 have_routed="$(sudo iptables -S "$chain" | grep -F -- '--comment cluster-lab-routed' | sort || true)"
