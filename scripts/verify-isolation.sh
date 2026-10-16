@@ -137,7 +137,11 @@ sudo nft list table inet cluster_lab 2>/dev/null || echo "(table absent)"
 
 fwd="$(cat "/proc/sys/net/ipv4/conf/$PROV_BRIDGE/forwarding" 2>/dev/null || echo '?')"
 echo "--- advisory: net.ipv4.conf.$PROV_BRIDGE.forwarding = $fwd ---"
-if [[ "$fwd" != "0" ]]; then
+if [[ "$fwd" != "0" ]] && [[ "${NODE_INTERNET_ACCESS:-no}" =~ ^(yes|true|1)$ || "${LAB_LAN_ACCESS:-no}" =~ ^(yes|true|1)$ ]]; then
+  echo "forwarding is on because lab/local.env enables NODE_INTERNET_ACCESS or"
+  echo "LAB_LAN_ACCESS. The table above allows only that traffic and still drops"
+  echo "new connections from the segment to the home LAN and other private ranges."
+elif [[ "$fwd" != "0" ]]; then
   warn "forwarding is on for $PROV_BRIDGE. Something wrote net.ipv4.conf.all.forwarding
      after 'make up' — Docker does this when it restarts. Not a failure: the
      nftables drop above still holds. 'make up' sets it back."

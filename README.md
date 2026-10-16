@@ -48,9 +48,10 @@ How it works, how to verify it, and the full documentation index are in
                               slurmd, sshd (key only), node_exporter
 ```
 
-The head node is the only way in. Compute nodes sit on an isolated segment
-with no internet access, the same way a production cluster's compute fabric
-does.
+The head node is the only way in. Compute nodes sit on an isolated segment,
+the same way a production cluster's compute fabric does. By default they have
+no internet access; `NODE_INTERNET_ACCESS=yes` in `lab/local.env` gives them
+outbound internet through the head node (see 1.4).
 
 | Machine | Role | You reach it with |
 | --- | --- | --- |
@@ -205,6 +206,22 @@ it as the nodes' gateway, and hands out the rest by DHCP. The node addresses
 follow it: node 1 is `<subnet>.20`. Use a private `/22` or larger. `make up`
 refuses a subnet your host already uses (another interface, a Docker network,
 or `LAB_LAN_CIDR`) and names the clash.
+
+**Optional: give the compute nodes internet.** Set
+`NODE_INTERNET_ACCESS=yes` and run `make up`. The head node then forwards
+traffic from the nodes to the internet and translates their addresses to its
+own (source NAT), and its DNS server starts answering names outside the lab.
+Set it back to `no` and run `make up` to close it again; the nodes do not need
+a reboot either way. Three things stay true when it is on:
+
+- Nodes reach **public** addresses only. New connections from a node to your
+  home LAN, Windows, Docker or any other private range are still dropped.
+- Nothing on the internet or your LAN can open a connection to a node. Only
+  replies to a node's own connections come back.
+- DHCP and TFTP still answer only on `br-prov`.
+
+DNS goes to the head node's own resolvers. To use others, set
+`NODE_DNS_UPSTREAM`, for example `NODE_DNS_UPSTREAM=192.0.2.53 198.51.100.53`.
 
 Node size is `NODE_VCPUS`, `NODE_MEM_MB` and `NODE_DISK_GB`. The file
 documents every variable. `lab/local.env` is ignored by git, and CI fails if
@@ -393,9 +410,12 @@ sudo install -o hpc -g hpc data.tar /home/hpc/
 
 ### Install software
 
-Compute nodes are **stateless** and have **no internet**. `dnf install` on a
-node has no repository to reach, and anything changed by hand is gone at the
-next reboot. Software goes in one of two places:
+Compute nodes are **stateless**: anything changed by hand on a node is gone
+at the next reboot. By default they also have **no internet**, so `dnf
+install` on a node has no repository to reach. With
+`NODE_INTERNET_ACCESS=yes` (see 1.4) it works, which is handy for trying a
+package on one node, but the package is still gone after a reboot. Software
+that should stay goes in one of two places:
 
 **1. User software: `/opt/software` on the head node.** Every node mounts
 it, so anything installed there is on every node at once. It is
