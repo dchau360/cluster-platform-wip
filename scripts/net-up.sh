@@ -85,10 +85,36 @@ else
   changed "$PROV_BRIDGE brought up"
 fi
 
-# --- isolation -------------------------------------------------------------
+# --- routed access ---------------------------------------------------------
 
+# These are independent opt-ins. LAN access allows new connections from the
+# home LAN into the cluster. Node internet access allows new connections from
+# the provisioning segment out through the head node, with source NAT. Neither
+# option exposes DHCP or TFTP because dnsmasq remains bound to PROV_BRIDGE.
+bool_setting() {
+  local name="$1" value="${!1:-}" default="$2"
+  case "$value" in
+    yes|true|1) printf yes ;;
+    no|false|0) printf no ;;
+    '') printf '%s' "$default" ;;
+    *) die "$name must be yes or no, not '$value'" ;;
+  esac
+}
+lan_access="$(bool_setting LAB_LAN_ACCESS no)"
+node_internet="$(bool_setting NODE_INTERNET_ACCESS no)"
+
+lan_clients=()
+if [[ "$lan_access" == yes ]]; then
+  [[ -n "${LAB_LAN_CIDR:-}" ]] || die "LAB_LAN_ACCESS=yes needs LAB_LAN_CIDR in lab/local.env"
+  lan_clients=("$LAB_LAN_CIDR")
+  wsl_gw="$(ip -4 route show default | awk '{ print $3; exit }')"
+  [[ -z "$wsl_gw" ]] || lan_clients+=("$wsl_gw/32")
+fi
+
+want_forwarding=0
+[[ "$lan_access" == yes || "$node_internet" == yes ]] && want_forwarding=1
 for knob in forwarding rp_filter; do
-  want=0; [[ "$knob" == rp_filter ]] && want=1
+  want=$want_forwarding; [[ "$knob" == rp_filter ]] && want=1
   path="/proc/sys/net/ipv4/conf/$PROV_BRIDGE/$knob"
   [[ -w "$path" ]] || [[ -e "$path" ]] || continue
   if [[ "$(cat "$path" 2>/dev/null || echo x)" == "$want" ]]; then
@@ -99,25 +125,84 @@ for knob in forwarding rp_filter; do
   fi
 done
 
-read -r -d '' NFT_RULESET <<EOF || true
-table inet $NFT_TABLE {
+lan_rules=""
+lan_forward=""
+if [[ "$lan_access" == yes ]]; then
+  clients="$(printf '%s, ' "${lan_clients[@]}")"; clients="${clients%, }"
+  read -r -d '' lan_rules <<EOF || true
+  set lan_clients {
+    type ipv4_addr; flags interval;
+    elements = { $clients }
+  }
+  chain input {
+    type filter hook input priority -10; policy accept;
+    iifname != "$PROV_BRIDGE" ip saddr @lan_clients ip daddr $PROV_CIDR tcp dport 22 accept
+    iifname != "$PROV_BRIDGE" ip saddr @lan_clients ip daddr $PROV_CIDR meta l4proto icmp accept
+    iifname != "$PROV_BRIDGE" ip saddr @lan_clients ip daddr $PROV_CIDR counter drop
+  }
+EOF
+  lan_forward="
+    oifname \"$PROV_BRIDGE\" iifname != \"$PROV_BRIDGE\" ip saddr @lan_clients counter accept
+    iifname \"$PROV_BRIDGE\" oifname != \"$PROV_BRIDGE\" ct state established,related counter accept"
+fi
+
+# Internet means public addresses only. A node may not open connections to
+# the home LAN, Windows, Docker or any other private range, so egress cannot
+# become a path around the isolation that keeps the lab off the home network.
+# Replies to LAN-initiated connections are established traffic and pass above.
+internet_forward=""
+if [[ "$node_internet" == yes ]]; then
+  internet_forward="
+    iifname \"$PROV_BRIDGE\" oifname != \"$PROV_BRIDGE\" ip daddr { 10.0.0.0/8, 100.64.0.0/10, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16 } ct state new counter drop
+    iifname \"$PROV_BRIDGE\" oifname != \"$PROV_BRIDGE\" ip saddr $PROV_CIDR counter accept
+    oifname \"$PROV_BRIDGE\" iifname != \"$PROV_BRIDGE\" ip daddr $PROV_CIDR ct state established,related counter accept"
+fi
+
+read -r -d '' NFT_BODY <<EOF || true
+$lan_rules
   chain forward {
     type filter hook forward priority -10; policy accept;
+$lan_forward$internet_forward
     iifname "$PROV_BRIDGE" oifname != "$PROV_BRIDGE" counter drop
     oifname "$PROV_BRIDGE" iifname != "$PROV_BRIDGE" counter drop
   }
-}
 EOF
 
-current="$(sudo nft -s list table inet "$NFT_TABLE" 2>/dev/null || true)"
-if [[ -n "$current" ]] \
-   && [[ "$(printf '%s' "$current" | grep -c 'counter drop')" == "2" ]] \
-   && printf '%s' "$current" | grep -qF "iifname \"$PROV_BRIDGE\""; then
-  ok "nftables table inet $NFT_TABLE"
+digest="$(printf '%s' "$NFT_BODY" | sha256sum | cut -c1-16)"
+current="$(sudo nft list table inet "$NFT_TABLE" 2>/dev/null || true)"
+if [[ "$current" == *"cluster-lab $digest"* ]]; then
+  ok "nftables table inet $NFT_TABLE (LAN: $lan_access, internet: $node_internet)"
 else
   sudo nft delete table inet "$NFT_TABLE" 2>/dev/null || true
-  printf '%s\n' "$NFT_RULESET" | sudo nft -f -
-  changed "nftables table inet $NFT_TABLE installed"
+  printf 'table inet %s {\n  comment "cluster-lab %s"\n%s\n}\n' "$NFT_TABLE" "$digest" "$NFT_BODY" | sudo nft -f -
+  changed "nftables table inet $NFT_TABLE installed (LAN: $lan_access, internet: $node_internet)"
+fi
+
+# NAT is separate from filtering. Masquerading lets replies return through the
+# head node without teaching upstream routers about the provisioning subnet.
+NAT_TABLE=cluster_lab_nat
+if [[ "$node_internet" == yes ]]; then
+  read -r -d '' NAT_RULESET <<EOF || true
+table ip $NAT_TABLE {
+  chain postrouting {
+    type nat hook postrouting priority srcnat; policy accept;
+    iifname "$PROV_BRIDGE" oifname != "$PROV_BRIDGE" ip saddr $PROV_CIDR masquerade
+  }
+}
+EOF
+  current_nat="$(sudo nft -s list table ip "$NAT_TABLE" 2>/dev/null || true)"
+  if [[ "$current_nat" == *"ip saddr $PROV_CIDR masquerade"* ]]; then
+    ok "nftables NAT for node internet access"
+  else
+    sudo nft delete table ip "$NAT_TABLE" 2>/dev/null || true
+    printf '%s\n' "$NAT_RULESET" | sudo nft -f -
+    changed "nftables NAT installed for node internet access"
+  fi
+elif sudo nft list table ip "$NAT_TABLE" >/dev/null 2>&1; then
+  sudo nft delete table ip "$NAT_TABLE"
+  changed "nftables NAT removed (node internet access: no)"
+else
+  ok "nftables NAT absent (node internet access: no)"
 fi
 
 # Node to node. Docker (NetBox) loads br_netfilter, so frames bridged between
@@ -127,9 +212,9 @@ fi
 # that both enters and leaves the bridge, in DOCKER-USER (the chain Docker
 # leaves alone) when it exists. Traffic leaving the segment is still dropped
 # by the table above.
+chain=FORWARD
+sudo iptables -n -L DOCKER-USER >/dev/null 2>&1 && chain=DOCKER-USER
 if [[ "$(cat /proc/sys/net/bridge/bridge-nf-call-iptables 2>/dev/null || echo 0)" == 1 ]]; then
-  chain=FORWARD
-  sudo iptables -n -L DOCKER-USER >/dev/null 2>&1 && chain=DOCKER-USER
   rule=(-i "$PROV_BRIDGE" -o "$PROV_BRIDGE" -m comment --comment cluster-lab-segment -j ACCEPT)
   if sudo iptables -C "$chain" "${rule[@]}" 2>/dev/null; then
     ok "iptables $chain accepts traffic within $PROV_BRIDGE"
@@ -139,6 +224,37 @@ if [[ "$(cat /proc/sys/net/bridge/bridge-nf-call-iptables 2>/dev/null || echo 0)
   fi
 else
   ok "bridge netfilter off; traffic within $PROV_BRIDGE is not filtered"
+fi
+
+# Docker's iptables policy also needs explicit routed accepts. Keep these
+# comment-tagged so changing either flag removes stale rules idempotently.
+want_routed=()
+if [[ "$lan_access" == yes ]]; then
+  for client in "${lan_clients[@]}"; do
+    want_routed+=("-A $chain -s $client -o $PROV_BRIDGE -m comment --comment cluster-lab-routed -j ACCEPT")
+  done
+fi
+if [[ "$lan_access" == yes || "$node_internet" == yes ]]; then
+  want_routed+=("-A $chain -o $PROV_BRIDGE -m conntrack --ctstate RELATED,ESTABLISHED -m comment --comment cluster-lab-routed -j ACCEPT")
+fi
+if [[ "$node_internet" == yes ]]; then
+  want_routed+=("-A $chain -s $PROV_CIDR -i $PROV_BRIDGE -m comment --comment cluster-lab-routed -j ACCEPT")
+fi
+have_routed="$(sudo iptables -S "$chain" | grep -F -- '--comment cluster-lab-routed' | sort || true)"
+want_routed_text="$( (( ${#want_routed[@]} == 0 )) || printf '%s\n' "${want_routed[@]}" | sort)"
+if [[ "$want_routed_text" == "$have_routed" ]]; then
+  ok "iptables $chain routed rules match"
+else
+  while read -r spec; do
+    [[ -n "$spec" ]] || continue
+    # shellcheck disable=SC2086
+    sudo iptables ${spec/#-A/-D}
+  done <<<"$have_routed"
+  for spec in "${want_routed[@]}"; do
+    # shellcheck disable=SC2086
+    sudo iptables ${spec/#-A $chain/-I $chain 1}
+  done
+  changed "iptables $chain routed rules set"
 fi
 
 # --- dnsmasq configuration -------------------------------------------------
@@ -168,6 +284,25 @@ if [[ -x /usr/local/sbin/render-netbox-dnsmasq ]]; then
   fi
 fi
 
+# DNS for names outside the lab. With node internet access off, dnsmasq
+# answers only for $PROV_DOMAIN and forwards nothing. With it on, dnsmasq
+# forwards to the head node's own resolvers (WSL's DNS proxy, usually),
+# or to NODE_DNS_UPSTREAM when set. Loopback stubs such as systemd-resolved's
+# 127.0.0.53 are skipped in favour of the servers behind them.
+dns_upstream=""
+if [[ "$node_internet" == yes ]]; then
+  if [[ -n "${NODE_DNS_UPSTREAM:-}" ]]; then
+    upstreams="${NODE_DNS_UPSTREAM//,/ }"
+  else
+    resolv=/etc/resolv.conf
+    [[ -r /run/systemd/resolve/resolv.conf ]] && resolv=/run/systemd/resolve/resolv.conf
+    upstreams="$(awk '$1 == "nameserver" && $2 !~ /^127\./ && $2 !~ /:/ { print $2 }' "$resolv" | xargs)"
+  fi
+  [[ -n "$upstreams" ]] || die "NODE_INTERNET_ACCESS=yes but no upstream DNS server found; set NODE_DNS_UPSTREAM in lab/local.env"
+  for server in $upstreams; do dns_upstream+="server=$server"$'\n'; done
+fi
+
+dnsmasq_conf_before="$(sudo sha256sum "$LAB_STATE_DIR/dnsmasq/lab.conf" 2>/dev/null || true)"
 ensure_file_content "$LAB_STATE_DIR/dnsmasq/lab.conf" 0644 <<EOF
 # Generated by scripts/net-up.sh. Do not edit by hand.
 #
@@ -179,7 +314,7 @@ except-interface=lo
 listen-address=$PROV_GW
 no-hosts
 no-resolv
-domain=$PROV_DOMAIN
+${dns_upstream}domain=$PROV_DOMAIN
 local=/$PROV_DOMAIN/
 expand-hosts
 
@@ -211,5 +346,13 @@ log-dhcp
 log-facility=$LAB_STATE_DIR/dnsmasq/dnsmasq.log
 pid-file=$LAB_RUN_DIR/dnsmasq.pid
 EOF
+
+# A running dnsmasq only reads its config at start. Restart it when the
+# config changed, so flipping NODE_INTERNET_ACCESS takes effect on make up.
+if [[ "$(sudo sha256sum "$LAB_STATE_DIR/dnsmasq/lab.conf")" != "$dnsmasq_conf_before" ]] \
+   && systemctl is-active --quiet lab-dnsmasq.service; then
+  sudo systemctl restart lab-dnsmasq.service
+  changed "lab-dnsmasq restarted for the new config"
+fi
 
 log "segment $PROV_CIDR on $PROV_BRIDGE, ${NODE_COUNT} node reservation(s)"

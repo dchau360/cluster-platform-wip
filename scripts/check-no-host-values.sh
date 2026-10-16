@@ -313,11 +313,13 @@ fi
 section "check 5: only allowlisted IPv4 literals in tracked files"
 
 # Allowed: the three fixed, repo-defined /22 lab segments; loopback and wildcard
-# addresses; common netmasks; and the three RFC 5737 documentation ranges.
+# addresses; the base address of each private/special-use block (a block name,
+# never a host); common netmasks; and the three RFC 5737 documentation ranges.
 ip_allowed() {
   case "$1" in
     10.4[0-9].*|10.50.*)                       return 0 ;;  # repo-defined lab segments
-    127.0.0.1)                                 return 0 ;;
+    127.*)                                     return 0 ;;  # loopback, incl. resolved's 127.0.0.53
+    10.0.0.0|100.64.0.0|169.254.0.0|172.16.0.0|192.168.0.0) return 0 ;;  # RFC 1918/6598/3927 block bases
     0.0.0.0)                                   return 0 ;;
     255.255.252.0|255.255.255.0|255.255.255.255|255.255.0.0) return 0 ;;
     192.0.2.*)                                 return 0 ;;  # RFC 5737 TEST-NET-1
