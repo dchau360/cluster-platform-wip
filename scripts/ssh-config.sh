@@ -52,6 +52,8 @@ Host cluster-tunnel
   LocalForward 9093 127.0.0.1:9093
   ExitOnForwardFailure yes
 
+# Any port on any node by address (macOS/Linux): sshuttle -r cluster $PROV_CIDR
+
 # Every node, as root, through the head node. \`ssh ${NODE_NAME_PREFIX:-cn}01\`.
 Host ${NODE_NAME_PREFIX:-cn}??
   User root

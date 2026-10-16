@@ -223,29 +223,6 @@ a reboot either way. Three things stay true when it is on:
 DNS goes to the head node's own resolvers. To use others, set
 `NODE_DNS_UPSTREAM`, for example `NODE_DNS_UPSTREAM=192.0.2.53 198.51.100.53`.
 
-**Optional: reach the cluster from your home network.** By default only the
-head node can reach the nodes, and you get to them through it (`ssh cn01`,
-part 2). To let machines on your LAN connect to node addresses directly, the
-traffic has to cross three hops, and each needs one step:
-
-1. **WSL.** Set `LAB_LAN_ACCESS=yes` and run `make up`. The head node then
-   forwards from `LAB_LAN_CIDR` to the cluster subnet, for SSH and ping only.
-2. **Windows.** Run `make lan-access`. It prints one PowerShell command with
-   your values filled in; run that once in an administrator PowerShell. It
-   installs a task that runs as SYSTEM at boot and every minute. The task
-   turns on IP forwarding between your LAN adapter and WSL's, and keeps a
-   route to the cluster subnet pointed at WSL's current address. WSL can
-   change that address when Windows restarts, which is why a one-off setting
-   is not enough. The installer also adds a Hyper-V firewall rule that lets
-   `LAB_LAN_CIDR` reach the cluster subnet on TCP 22 only. Remove everything
-   with `install-lan-route.ps1 -Uninstall`.
-3. **Your router.** Add a static route: the cluster subnet via the Windows
-   host's LAN address. `make lan-access` prints both values.
-
-After that, `ssh root@10.44.0.20` works from any machine on your LAN that has
-its key authorized (`make authorize-key`). DHCP and TFTP still answer only on
-`br-prov`, and nodes still cannot open connections to your LAN.
-
 Node size is `NODE_VCPUS`, `NODE_MEM_MB` and `NODE_DISK_GB`. The file
 documents every variable. `lab/local.env` is ignored by git, and CI fails if
 one of its values ever shows up in a tracked file.
@@ -339,8 +316,30 @@ ssh -N cluster-tunnel       # leave running, then open the URLs below
 | Prometheus: node and Slurm metrics, alert rules | http://localhost:9090 | none |
 | Alertmanager: firing alerts, silences | http://localhost:9093 | none |
 
-These services listen only on the head node's loopback. The tunnel is the
-only way to reach them, and they are never exposed on your LAN.
+These services are never exposed on your LAN. NetBox listens only on the
+head node's loopback, so the tunnel is the way to reach it.
+
+**Optional: reach every cluster address from your workstation.** `ssh cn01`
+covers SSH. To reach any port on any node by its address, for example
+`ssh root@10.44.0.20`, a node's `node_exporter` on `:9100`, or Prometheus at
+`http://10.44.0.1:9090`, run [sshuttle](https://github.com/sshuttle/sshuttle)
+on macOS or Linux:
+
+```sh
+brew install sshuttle              # or: apt install sshuttle / pip install sshuttle
+sshuttle -r cluster 10.44.0.0/22   # your PROV_SUBNET; asks for your sudo password
+```
+
+Leave it running; Ctrl-C closes it. It carries TCP to the cluster subnet over
+the same `ssh cluster` connection, so nothing on Windows, your router or the
+head node changes, and the head node needs nothing beyond the `python3` it
+already has. Two limits: it carries TCP only (no ping, no UDP), and
+NetBox still needs the tunnel because it is bound to loopback. Node names
+resolve only on the head node, so use addresses here, or `ssh cn01`.
+
+A plain route to the cluster subnet through the Windows host does not work.
+WSL's NAT on Windows rewrites the source address of the cluster's replies, so
+your workstation discards them. That is why this goes over SSH instead.
 
 ---
 

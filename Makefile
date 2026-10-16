@@ -22,7 +22,7 @@ RUN := bash
 N ?=
 export N
 
-.PHONY: lan-access help up down down-hard demo nodes-up nodes-down status timings \
+.PHONY: help up down down-hard demo nodes-up nodes-down status timings \
 	ssh-config authorize-key \
         discover promote convergence-status drain resume reconfigure \
         rolling-update burnin-gate check-node-roles test-python \
@@ -106,9 +106,6 @@ promote: ## Move the deployed ref to a green commit. make promote SHA=<commit>
 
 ssh-config: ## Print the ~/.ssh/config block for your workstation (head node, nodes, UI tunnel)
 	@$(RUN) $(S)/ssh-config.sh
-
-lan-access: ## Print the Windows and router steps that LAB_LAN_ACCESS=yes needs
-	@$(RUN) $(S)/lan-access.sh
 
 authorize-key: ## Let a workstation key log in to the head node and every node. KEY='ssh-ed25519 ...'
 	@$(RUN) $(S)/authorize-key.sh
