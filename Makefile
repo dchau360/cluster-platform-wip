@@ -23,7 +23,7 @@ N ?=
 export N
 
 .PHONY: help up down down-hard demo nodes-up nodes-down status timings \
-	ssh-config authorize-key \
+	ssh-config lan-ports authorize-key \
         discover promote convergence-status drain resume reconfigure \
         rolling-update burnin-gate check-node-roles test-python \
         systemd-install verify verify-isolation verify-idempotent \
