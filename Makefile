@@ -23,7 +23,7 @@ N ?=
 export N
 
 .PHONY: help up down down-hard demo nodes-up nodes-down status timings \
-	ssh-config authorize-key \
+	ssh-config lan-ports authorize-key \
         discover promote convergence-status drain resume reconfigure \
         rolling-update burnin-gate check-node-roles test-python \
         systemd-install verify verify-isolation verify-idempotent \
@@ -106,6 +106,9 @@ promote: ## Move the deployed ref to a green commit. make promote SHA=<commit>
 
 ssh-config: ## Print the ~/.ssh/config block for your workstation (head node, nodes, UI tunnel)
 	@$(RUN) $(S)/ssh-config.sh
+
+lan-ports: ## Reconcile LAN port forwards (LAN_PORT_FORWARDS) and print the Windows command
+	@$(RUN) $(S)/lan-ports.sh
 
 authorize-key: ## Let a workstation key log in to the head node and every node. KEY='ssh-ed25519 ...'
 	@$(RUN) $(S)/authorize-key.sh
