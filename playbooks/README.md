@@ -15,7 +15,9 @@ playbook should be enough to do the job without asking anyone.
 
 [toolbox.md](toolbox.md) lists every approved tool: make targets, scripts,
 gates and docs. [lessons.md](lessons.md) records every playbook fix and the
-mistake behind it.
+mistake behind it. `CLAUDE.md` and `AGENTS.md` at the repo root send any
+agent here first. `make check-playbooks` keeps the toolbox and the Done when
+lists complete.
 
 ## What the platform is for
 

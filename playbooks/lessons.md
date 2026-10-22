@@ -4,6 +4,16 @@ Every time the operator got something wrong, the fix went into a playbook,
 the toolbox or a gate, not a chat. Newest first. One line for what went
 wrong, one for what changed.
 
+## 2026-10-22: agent resumed without reading the playbooks
+
+Wrong: an agent session started cold with nothing pointing it at
+`playbooks/`, so it worked from git history alone. It also found make
+targets that had never been added to the toolbox.
+Changed: `CLAUDE.md` (and `AGENTS.md`, which links to it) sends every agent
+to the playbooks first. New gate `make check-playbooks`, run by `make lint`
+and CI: every make target is in the toolbox, and every playbook is indexed
+and has a Done when checklist.
+
 ## 2026-10-22: interview round 1 answered
 
 Wrong: nothing had been written down about what "fixed" meant for the

@@ -199,6 +199,10 @@ jobs:
       # the constraint that lets one role set serve ansible-pull and push.
       - name: Node-local roles stay node-local
         run: ./scripts/check-node-roles-are-local.sh
+      # Every make target is in the toolbox; every playbook is indexed and
+      # ends with a Done when checklist (playbooks/README.md, the four rules).
+      - name: Playbooks stay complete
+        run: ./scripts/check-playbooks.sh
       - name: Unit tests (seeding, renderers, node API, burn-in gate)
         run: make test-python
 
