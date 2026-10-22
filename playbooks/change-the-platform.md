@@ -35,7 +35,10 @@ lab session ([lab-session.md](lab-session.md)).
    then `make converge`. If `systemd/` changed, also `make systemd-install`.
    If a node role changed, `make promote SHA=<merge commit>`, then
    `make convergence-status`.
-10. **Clean up.** Remove the lab scratch checkout and the local worktree
+10. **Clean up, only after the merge.** First prove it merged:
+    `gh pr view <n> --json state -q .state` prints `MERGED`. Anything else,
+    stop: deleting the branch of an open PR closes it. Then remove the lab
+    scratch checkout and the local worktree
     (`git worktree remove ../cluster-platform-sre<NN>`), and delete the
     merged branch.
 11. **Hand off.** Post the Done when checklist on the issue with the output
@@ -50,10 +53,12 @@ lab session ([lab-session.md](lab-session.md)).
 - [ ] Node role changed: `make convergence-status` exits 0 after `make promote`
 - [ ] The issue's own check passes on the lab from `main`, output pasted
 - [ ] Toolbox and docs updated if a target, script or operator step changed
-- [ ] Scratch checkout and worktree removed
+- [ ] Scratch checkout and worktree removed, after `gh pr view <n> --json state -q .state` printed `MERGED`
 
 ## Known traps
 
+- "Merged" said in chat is not merged. Check the PR state before deleting
+  anything. (lessons.md: 2026-10-22)
 - A fix that works on the head node may not reach the nodes. Check where
   the file has to land. (lessons.md: 2026-10-15)
 - Docs are scanned by the gates too: no node pair on one line, no literal

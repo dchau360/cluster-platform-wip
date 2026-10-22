@@ -4,6 +4,15 @@ Every time the operator got something wrong, the fix went into a playbook,
 the toolbox or a gate, not a chat. Newest first. One line for what went
 wrong, one for what changed.
 
+## 2026-10-22: cleaned up a PR that had not merged
+
+Wrong: told the PR was merged, the operator removed the worktree and deleted
+the remote branch without checking. The PR had not merged, and deleting its
+branch closed it. The branch had to be pushed again and the PR reopened.
+Changed: change-the-platform step 10 and its Done when require
+`gh pr view <n> --json state -q .state` to print `MERGED` before any branch
+or worktree is removed, and Known traps names the mistake.
+
 ## 2026-10-22: agent resumed without reading the playbooks
 
 Wrong: an agent session started cold with nothing pointing it at
