@@ -25,10 +25,10 @@ target descriptions; this file says when to reach for each one.
 | `make converge` | Apply the head-node play | change-the-platform 6, 9 |
 | `make promote SHA=<commit>` | Move `deployed`, the ref nodes pull | change-the-platform 9 |
 | `make convergence-status` | Each node's last pull; non-zero if stale or failed | change-the-platform 9 |
-| `make rolling-update TAG=...` / `make rollback TAG=...` | Node image rollout and rollback | — |
+| `make rolling-update TAG=...` / `make rollback TAG=...` | Node image rollout and rollback | image-release 5, 7, 8 |
 | `make drain` / `make resume` / `make reconfigure` | Slurm day-2 | fix-a-cluster-defect 1 |
-| `make nodes-activate`, `make burnin-gate` | Staged nodes through burn-in to active | — |
-| `make discover NODE=<node>` | Discovery boot and NetBox record check | fix-a-cluster-defect 1 |
+| `make nodes-activate`, `make burnin-gate` | Staged nodes through burn-in to active | add-a-machine 6 |
+| `make discover NODE=<node>` | Discovery boot and NetBox record check (lab nodes) | fix-a-cluster-defect 1 |
 
 ## Gates (all run by `make lint` and CI)
 
@@ -48,10 +48,18 @@ target descriptions; this file says when to reach for each one.
 | Tool | Proves | Playbook |
 |---|---|---|
 | `make acceptance` and `make drill-*` | Rollback, re-provision, NIC swap, cold start | fix-a-cluster-defect 6 |
-| `make slurm-ready`, `make rdma-test` | Slurm jobs on every node; RDMA path | fix-a-cluster-defect 1 |
+| `make slurm-ready`, `make rdma-test` | Slurm jobs on every node; RDMA path | fix-a-cluster-defect 1, image-release 6, add-a-machine 7 |
 | `make verify` | Isolation and idempotence | change-the-platform 9 |
 | `make timings`, `make record-demo` | Measured runs, recorded | — |
 | Alert rules (`monitoring/`) | StalePull, BurnInFailed, NodeDown, SlurmctldDown | fix-a-cluster-defect 6 |
+
+## Node images (`cluster-images-wip`)
+
+| Tool | Use it for | Playbook |
+|---|---|---|
+| `make lint` (in `cluster-images-wip`) | That repo's gates: host values, secrets, yaml, shell, Containerfiles | image-release 2 |
+| `make build IMAGE=<name>` | Local build check of one image | image-release 2 |
+| `.github/workflows/images.yml` | Publishes `sha-<12>` and `latest` to GHCR on merge to `main` | image-release 3, 4 |
 
 ## Docs
 
@@ -63,7 +71,9 @@ target descriptions; this file says when to reach for each one.
 | `docs/lab-host-setup.md`, `lab/README.md` | Lab host and `lab/local.env` |
 | `docs/acceptance-drills.md` | Adding or running a drill |
 | `docs/production-readiness.md` | A gap is found that the lab accepts but production would not |
-| `docs/discovery.md`, `docs/redfish.md`, `docs/network-isolation.md` | Those subsystems |
+| `docs/operations.md` "Images" | Releasing a node image |
+| `docs/operations.md` "Add a machine", `docs/discovery.md` | Adding a lab node or a real machine |
+| `docs/redfish.md`, `docs/network-isolation.md` | Those subsystems |
 
 `scripts/lib/` holds the shared shell helpers (`common.sh`, `netbox.sh`,
 `converge.sh`, `node-reboot.sh`, `timing.sh`). New scripts source them

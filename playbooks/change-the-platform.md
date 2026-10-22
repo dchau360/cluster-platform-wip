@@ -27,7 +27,10 @@ lab session ([lab-session.md](lab-session.md)).
    That checkout stays clean on `main`.
 7. **Commit.** One commit per idea, with a message that says why. Your git
    identity must not change (`make git-identity` checks the history).
-8. **Push and open a PR** against `main`. Wait for CI to go green. Merge.
+8. **Push and open a PR** against `main`. Wait for CI to go green. Then
+   merge it yourself: the owner's rule is that the operator merges once the
+   Done when items that can run before merge pass (see the README, "Who
+   merges"). Paste their output in the PR description first.
 9. **Bring the lab to `main`.** In `~/src/cluster-platform-wip`: `git pull`,
    then `make converge`. If `systemd/` changed, also `make systemd-install`.
    If a node role changed, `make promote SHA=<merge commit>`, then

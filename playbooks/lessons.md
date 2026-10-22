@@ -4,6 +4,14 @@ Every time the operator got something wrong, the fix went into a playbook,
 the toolbox or a gate, not a chat. Newest first. One line for what went
 wrong, one for what changed.
 
+## 2026-10-22: interview round 1 answered
+
+Wrong: nothing had been written down about what "fixed" meant for the
+project, so each issue chose its own finish line.
+Changed: the README states the owner's definition of done and who merges.
+Two new playbooks: [image-release.md](image-release.md) and
+[add-a-machine.md](add-a-machine.md).
+
 ## 2026-10-22: playbooks introduced
 
 The first entries below are taken from issues that came before the
