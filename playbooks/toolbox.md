@@ -17,6 +17,7 @@ target descriptions; this file says when to reach for each one.
 | `make cold-start-check` | Every unit enabled at boot | change-the-platform 9 |
 | `make ssh-config`, `make authorize-key KEY=...` | Operator access to head node and nodes | lab-session 1 |
 | `make lan-ports` | LAN port forwards via the Windows host | — |
+| `make redfish` / `make redfish-demo` | Systems on the Redfish emulator; power-cycle and boot order | — |
 
 ## Change and deliver
 
@@ -38,6 +39,7 @@ target descriptions; this file says when to reach for each one.
 | `make check-env-example` | An unsafe `lab/local.env.example` | change-the-platform 5 |
 | `make secrets`, `make tracked-secrets`, `make git-identity` | Key material in the tree or history | change-the-platform 5, 7 |
 | `make check-node-roles` | A node role that reaches another host | fix-a-cluster-defect 2 |
+| `make check-playbooks` | A make target missing from this toolbox; a playbook with no Done when or not in the index | change-the-platform 4, 5 |
 | `scripts/check-node-count-is-variable.sh` | Literal node counts and node lists, docs included | change-the-platform 5 |
 | `make lint-yaml`, `make lint-ansible`, `make lint-shell` | Style and correctness | change-the-platform 5 |
 | `make test-python` | Address plan, NetBox renderers, node API, burn-in gate | fix-a-cluster-defect 6 |
@@ -49,7 +51,7 @@ target descriptions; this file says when to reach for each one.
 |---|---|---|
 | `make acceptance` and `make drill-*` | Rollback, re-provision, NIC swap, cold start | fix-a-cluster-defect 6 |
 | `make slurm-ready`, `make rdma-test` | Slurm jobs on every node; RDMA path | fix-a-cluster-defect 1, image-release 6, add-a-machine 7 |
-| `make verify` | Isolation and idempotence | change-the-platform 9 |
+| `make verify` (`make verify-isolation`, `make verify-idempotent`) | Isolation and idempotence | change-the-platform 9 |
 | `make timings`, `make record-demo` | Measured runs, recorded | — |
 | Alert rules (`monitoring/`) | StalePull, BurnInFailed, NodeDown, SlurmctldDown | fix-a-cluster-defect 6 |
 
@@ -65,6 +67,7 @@ target descriptions; this file says when to reach for each one.
 
 | Doc | Read it when |
 |---|---|
+| `CLAUDE.md` (`AGENTS.md` links to it) | Starting any session. It sends you to the playbooks |
 | `docs/operations.md` | Any operator step. Update it when one changes |
 | `docs/architecture.md` | Deciding where a fix belongs |
 | `docs/node-self-configuration.md` | Changing a node role or `ansible-pull` |

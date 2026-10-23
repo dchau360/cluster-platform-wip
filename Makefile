@@ -25,7 +25,7 @@ export N
 .PHONY: help up down down-hard demo nodes-up nodes-down status timings \
 	ssh-config lan-ports authorize-key \
         discover promote convergence-status drain resume reconfigure \
-        rolling-update burnin-gate check-node-roles test-python \
+        rolling-update burnin-gate check-node-roles check-playbooks test-python \
         systemd-install verify verify-isolation verify-idempotent \
         redfish redfish-demo converge rollback drill-nic-swap drill-reprovision \
         drill-cold-start \
@@ -170,7 +170,7 @@ need = @command -v $(1) >/dev/null 2>&1 || { \
 	  printf 'error: %s not found, so this gate cannot run.\n       %s\n' '$(1)' '$(2)' >&2; \
 	  exit 127; }
 
-lint: check-host-values check-env-example secrets tracked-secrets git-identity lint-yaml lint-ansible lint-shell check-node-roles test-python ## Run every repo gate
+lint: check-host-values check-env-example secrets tracked-secrets git-identity lint-yaml lint-ansible lint-shell check-node-roles check-playbooks test-python ## Run every repo gate
 
 check-host-values: ## Fail if any host-specific value is in a tracked file
 	@$(RUN) $(S)/check-no-host-values.sh
@@ -191,6 +191,9 @@ secrets: ## Run gitleaks over the worktree and the full history
 
 check-node-roles: ## Fail if a node-local role reaches another host
 	@$(RUN) $(S)/check-node-roles-are-local.sh
+
+check-playbooks: ## Fail if a make target is not in the toolbox, or a playbook has no Done when
+	@$(RUN) $(S)/check-playbooks.sh
 
 test-python: ## Unit tests: address plan, NetBox renderers, node API, burn-in gate
 	@cd netbox && python3 -m unittest -q test_address_plan test_ib_guid test_render_dnsmasq test_render_slurm test_node_api test_burnin_gate
